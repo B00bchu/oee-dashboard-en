@@ -1,10 +1,13 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OEE Production EN-Plating (GitHub Compatible)</title>
+    <title>OEE Production EN-Plating</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS สำหรับอ่านไฟล์ Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700;800&display=swap');
@@ -20,16 +23,36 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         
+        @keyframes gradient-x {
+            0%, 100% { background-size: 200% 200%; background-position: left center; }
+            50% { background-size: 200% 200%; background-position: right center; }
+        }
+        .animate-gradient-x { animation: gradient-x 3s ease infinite; }
+
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(30px) scale(0.95); }
+            100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-fade-in-up { animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+
         .glass-card { 
             @apply bg-white/80 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-500 hover:shadow-[0_15px_40px_rgb(0,0,0,0.12)] hover:-translate-y-1 relative overflow-hidden; 
         }
         
-        @keyframes scan-progress { 0% { width: 0%; } 100% { width: 100%; } }
-        .animate-scan-progress { animation: scan-progress 10s linear forwards; }
-        .animate-scan-progress-pie { animation: scan-progress 6s linear infinite; }
-        
-        @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(30px) scale(0.95); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
-        .animate-fade-in-up { animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+        .chart-glow {
+            filter: drop-shadow(0px 8px 12px rgba(0, 0, 0, 0.08));
+        }
+
+        @keyframes scan-progress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+        .animate-scan-progress {
+            animation: scan-progress 10s linear infinite;
+        }
+        .animate-scan-progress-pie {
+            animation: scan-progress 6s linear infinite;
+        }
     </style>
 </head>
 <body>
@@ -43,72 +66,20 @@
     <script src="https://unpkg.com/lucide@0.453.0/dist/umd/lucide.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        const getFirebaseConfig = () => {
-            // Priority 1: Environment variable from hosting/Gemini
-            try {
-                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                    return JSON.parse(__firebase_config);
-                }
-            } catch (e) {}
-
-            // Priority 2: Manual Config (For GitHub Pages)
-            // เปลี่ยนค่าเหล่านี้เป็นข้อมูลจริงจาก Firebase Console ของคุณ
-            return {
-                apiKey: "YOUR_API_KEY",
-                authDomain: "YOUR_PROJECT.firebaseapp.com",
-                projectId: "YOUR_PROJECT_ID",
-                storageBucket: "YOUR_PROJECT.appspot.com",
-                messagingSenderId: "YOUR_ID",
-                appId: "YOUR_APP_ID"
-            };
-        };
-
-        const config = getFirebaseConfig();
-        let isConfigValid = config.apiKey && config.apiKey !== "YOUR_API_KEY";
-
-        if (isConfigValid) {
-            try {
-                const app = initializeApp(config);
-                window.fb = {
-                    auth: getAuth(app),
-                    db: getFirestore(app),
-                    doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
-                    appId: typeof __app_id !== 'undefined' ? __app_id : 'oee-plating-github-app',
-                    initialToken: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null,
-                    isConfigured: true
-                };
-            } catch (e) {
-                console.error("Firebase Init Error:", e);
-                window.fb = { isConfigured: false };
-            }
-        } else {
-            window.fb = { isConfigured: false, appId: 'oee-plating-github-app' };
-        }
-        
-        window.dispatchEvent(new CustomEvent('firebase-ready'));
-    </script>
-
-    <!-- Application Script (Babel) -->
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         const { 
             BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, 
-            ResponsiveContainer, ReferenceLine, LabelList, Legend, Line, 
-            ComposedChart, PieChart, Pie, Sector, Area 
+            ResponsiveContainer, ReferenceLine, LabelList, Legend, Line, ComposedChart,
+            PieChart, Pie, Sector, Area
         } = window.Recharts;
-
-        const Icon = ({ name, size = 24, className = "" }) => {
+        
+        const Icon = ({ name, size = 24, className = "", style = {} }) => {
             const iconData = window.lucide.icons[name];
             if (!iconData) return null;
             const [tag, attrs, children] = iconData;
             return (
-                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}
                     dangerouslySetInnerHTML={{
                         __html: children.map(([childTag, childAttrs]) => {
                             const attrString = Object.entries(childAttrs).map(([key, value]) => `${key}="${value}"`).join(' ');
@@ -143,240 +114,205 @@
             const monthAbbr = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
             const fileInputRef = useRef(null);
 
-            const [user, setUser] = useState(null);
-            const [selectedMonth, setSelectedMonth] = useState(months[new Date().getMonth()]);
-            const [fullYearData, setFullYearData] = useState(() => {
-                const init = {};
-                months.forEach(m => init[m] = { monthlySummary: { oee: 0, output: 0, ngRate: 0, ngQty: 0, ngBreakdown: [] } });
-                return init;
-            });
+            const createEmptyYearData = () => {
+                const yearData = {};
+                months.forEach(m => {
+                    yearData[m] = {
+                        monthlySummary: { oee: 0, output: 0, ngRate: 0, ngQty: 0, ngBreakdown: [] }
+                    };
+                });
+                return yearData;
+            };
+
+            const getLatestMonthWithData = (dataToScan) => {
+                for (let i = months.length - 1; i >= 0; i--) {
+                    const m = months[i];
+                    const summary = dataToScan[m].monthlySummary;
+                    if (summary.output > 0 || summary.oee > 0 || summary.ngQty > 0) return m;
+                }
+                return months[new Date().getMonth()]; 
+            };
+
+            const [selectedMonth, setSelectedMonth] = useState(() => months[new Date().getMonth()]);
+            const [fullYearData, setFullYearData] = useState(createEmptyYearData());
             const [targets, setTargets] = useState({ oee: 90.0, ng: 1.0 });
-            const [overallOee, setOverallOee] = useState(0);
-            const [overallNgRate, setOverallNgRate] = useState(0);
-            const [sheetInput, setSheetInput] = useState("");
-            const [isLoading, setIsLoading] = useState(true);
             const [message, setMessage] = useState(null);
-            
-            const [oeeAutoIndex, setOeeAutoIndex] = useState(0);
-            const [ngAutoIndex, setNgAutoIndex] = useState(0);
+            const [overallNgRate, setOverallNgRate] = useState(0);
+            const [overallOee, setOverallOee] = useState(0);
+            const [showInputPanel, setShowInputPanel] = useState(true);
+            const [isFullscreen, setIsFullscreen] = useState(false);
+            const [autoPlayIndex, setAutoPlayIndex] = useState(0);
             const [pieAutoPlayIndex, setPieAutoPlayIndex] = useState(0);
 
-            // Handle Authentication and Initial Loading State
             useEffect(() => {
-                const setupAuth = async () => {
-                    if (!window.fb) return;
-                    
-                    if (!window.fb.isConfigured) {
-                        setIsLoading(false); // Skip loading if Firebase isn't configured
-                        return;
+                try {
+                    const savedData = localStorage.getItem('oeeDashboardData');
+                    if (savedData) {
+                        const parsed = JSON.parse(savedData);
+                        if (parsed.fullYearData) {
+                            setFullYearData(parsed.fullYearData);
+                            setSelectedMonth(getLatestMonthWithData(parsed.fullYearData));
+                        }
+                        if (parsed.targets) setTargets(parsed.targets);
+                        if (parsed.overallNgRate !== undefined) setOverallNgRate(parsed.overallNgRate);
+                        if (parsed.overallOee !== undefined) setOverallOee(parsed.overallOee);
                     }
-
-                    const { auth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, initialToken } = window.fb;
-                    try {
-                        if (initialToken) await signInWithCustomToken(auth, initialToken);
-                        else await signInAnonymously(auth);
-                    } catch (e) { 
-                        console.error("Auth Error:", e);
-                        setIsLoading(false);
-                    }
-                    onAuthStateChanged(auth, setUser);
-                };
-
-                if (window.fb) setupAuth();
-                else window.addEventListener('firebase-ready', setupAuth);
-
-                // Safety timeout: If nothing loads in 5 seconds, show UI anyway
-                const timer = setTimeout(() => setIsLoading(false), 5000);
-                return () => clearTimeout(timer);
+                } catch (e) { console.error("Failed to load data", e); }
             }, []);
 
-            // Firestore Data Listener
             useEffect(() => {
-                if (!user || !window.fb || !window.fb.db) return;
-                const { db, doc, onSnapshot, appId } = window.fb;
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'oeeDashboard', 'main');
-                
-                const unsubscribe = onSnapshot(docRef, (snap) => {
-                    if (snap.exists()) {
-                        const d = snap.data();
-                        if (d.fullYearData) setFullYearData(d.fullYearData);
-                        if (d.targets) setTargets(d.targets);
-                        if (d.overallOee !== undefined) setOverallOee(d.overallOee);
-                        if (d.overallNgRate !== undefined) setOverallNgRate(d.overallNgRate);
-                        if (d.sheetId) setSheetInput(d.sheetId);
-                    }
-                    setIsLoading(false);
-                }, (err) => { 
-                    console.error("Firestore Error:", err); 
-                    setIsLoading(false); 
-                });
-                return () => unsubscribe();
-            }, [user]);
-
-            const annualChartData = useMemo(() => months.map((m, idx) => ({
-                name: m, shortName: monthAbbr[idx], 
-                oee: fullYearData[m]?.monthlySummary?.oee || 0, 
-                output: fullYearData[m]?.monthlySummary?.output || 0,
-                ngRate: fullYearData[m]?.monthlySummary?.ngRate || 0, 
-                ngQty: fullYearData[m]?.monthlySummary?.ngQty || 0
-            })), [fullYearData]);
-
-            const validOeeIndices = useMemo(() => annualChartData.map((d, i) => d.oee > 0 ? i : -1).filter(i => i !== -1), [annualChartData]);
-            const validNgIndices = useMemo(() => annualChartData.map((d, i) => d.ngQty > 0 ? i : -1).filter(i => i !== -1), [annualChartData]);
+                const timer = setInterval(() => setAutoPlayIndex(prev => prev + 1), 10000);
+                return () => clearInterval(timer);
+            }, []);
 
             useEffect(() => {
-                const timer = setInterval(() => {
-                    if (validOeeIndices.length > 0) setOeeAutoIndex(prev => (prev + 1) % validOeeIndices.length);
-                    if (validNgIndices.length > 0) setNgAutoIndex(prev => (prev + 1) % validNgIndices.length);
-                }, 10000);
-                const pieTimer = setInterval(() => setPieAutoPlayIndex(p => p + 1), 6000);
-                return () => { clearInterval(timer); clearInterval(pieTimer); };
-            }, [validOeeIndices, validNgIndices]);
+                const timer = setInterval(() => setPieAutoPlayIndex(prev => prev + 1), 6000);
+                return () => clearInterval(timer);
+            }, []);
 
-            const yearlyOeeIndex = validOeeIndices.length > 0 ? validOeeIndices[oeeAutoIndex] : -1;
-            const yearlyNgIndex = validNgIndices.length > 0 ? validNgIndices[ngAutoIndex] : -1;
+            useEffect(() => {
+                const handleFullscreenChange = () => { if (!document.fullscreenElement && isFullscreen) setIsFullscreen(false); };
+                document.addEventListener('fullscreenchange', handleFullscreenChange);
+                return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            }, [isFullscreen]);
 
-            const extractId = (input) => input.includes("/d/") ? input.split("/d/")[1].split("/")[0] : input;
-            const formatNumber = (num) => new Intl.NumberFormat().format(Math.round(num));
-            const toFixed2 = (num) => (typeof num === 'number' ? num : 0).toFixed(2);
-
-            const findRowByMonthName = (ws, col, mAbbr, startRow, endRow) => {
-                const target = mAbbr.toLowerCase();
-                for (let r = startRow; r <= endRow; r++) {
-                    const cell = ws[`${col}${r}`];
-                    if (cell) {
-                        const cellText = cell.w ? String(cell.w).trim().toLowerCase() : String(cell.v).trim().toLowerCase();
-                        if (cellText.startsWith(target)) return r;
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.key === 'Escape' && isFullscreen) {
+                        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+                        setIsFullscreen(false);
                     }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [isFullscreen]);
+
+            const toggleFullscreen = () => {
+                if (!isFullscreen) {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => setIsFullscreen(true));
+                    } else setIsFullscreen(true);
+                } else {
+                    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().then(() => setIsFullscreen(false));
+                    else setIsFullscreen(false);
                 }
-                return -1;
             };
 
-            const saveToCloud = async (overrideData = null, overrideOee = null, overrideNg = null) => {
-                if (!window.fb || !window.fb.isConfigured) {
-                    setMessage({ type: 'error', text: 'ไม่ได้ตั้งค่า Firebase Cloud' });
-                    setTimeout(() => setMessage(null), 3000);
-                    return;
-                }
-                if (!user) return;
-                const { db, doc, setDoc, appId } = window.fb;
-                try {
-                    const dataToSave = {
-                        fullYearData: overrideData || fullYearData,
-                        targets,
-                        overallOee: overrideOee !== null ? overrideOee : overallOee,
-                        overallNgRate: overrideNg !== null ? overrideNg : overallNgRate,
-                        sheetId: extractId(sheetInput),
-                        updatedAt: new Date().toISOString()
-                    };
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oeeDashboard', 'main'), dataToSave);
-                    setMessage({ type: 'success', text: 'บันทึกข้อมูลลง Cloud สำเร็จ!' });
-                    setTimeout(() => setMessage(null), 3000);
-                } catch (e) { setMessage({ type: 'error', text: 'บันทึกล้มเหลว: ' + e.message }); }
-            };
+            const currentData = useMemo(() => fullYearData[selectedMonth], [fullYearData, selectedMonth]);
 
-            const processWorkbook = async (wb) => {
-                const newYearData = JSON.parse(JSON.stringify(fullYearData));
-                const ws = wb.Sheets["Summary monthly"];
-                if (!ws) throw new Error("ไม่พบ Sheet ชื่อ 'Summary monthly'");
+            const annualChartData = useMemo(() => {
+                const data = months.map((m, idx) => ({
+                    name: m,
+                    shortName: monthAbbr[idx],
+                    oee: fullYearData[m].monthlySummary.oee || 0,
+                    output: fullYearData[m].monthlySummary.output || 0,
+                    ngRate: fullYearData[m].monthlySummary.ngRate || 0,
+                    ngQty: fullYearData[m].monthlySummary.ngQty || 0,
+                    isTotal: false
+                }));
+                let totalOutput = 0; let totalNgQty = 0;
+                data.forEach(d => { totalOutput += d.output; totalNgQty += d.ngQty; });
+                const totalNgRate = totalOutput > 0 ? (totalNgQty / totalOutput) * 100 : 0;
+                data.push({ name: "รวมทั้งปี", shortName: "Total", oee: 0, output: totalOutput, ngRate: totalNgRate, ngQty: totalNgQty, isTotal: true });
+                return data;
+            }, [fullYearData]);
 
-                const ngTypesConfig = [
-                    { name: 'Product lost', col: 'G' }, { name: 'QC Semple', col: 'H' }, { name: 'Test Thickness', col: 'I' },
-                    { name: 'Dent (Handling)', col: 'J' }, { name: 'Stain', col: 'K' }, { name: 'Plating abnormal', col: 'L' },
-                    { name: 'Blister', col: 'M' }, { name: 'Barrel not rotate', col: 'N' }, { name: 'Thickness out spec', col: 'O' }
-                ];
+            const yearlyOeeData = annualChartData.filter(d => !d.isTotal);
+            const scannableYearlyIndices = yearlyOeeData.map((d, i) => (d.output > 0 || d.oee > 0) ? i : -1).filter(i => i !== -1);
+            const yearlyOeeIndex = scannableYearlyIndices.length > 0 ? scannableYearlyIndices[autoPlayIndex % scannableYearlyIndices.length] : 0;
 
-                months.forEach((m, idx) => {
-                    const mAbbr = monthAbbr[idx];
-                    let oeeRow = findRowByMonthName(ws, 'A', mAbbr, 2, 25);
-                    if (oeeRow === -1) oeeRow = findRowByMonthName(ws, 'B', mAbbr, 2, 25);
-                    if (oeeRow === -1) oeeRow = 3 + idx;
+            const scannableNgIndices = annualChartData.map((d, i) => (d.output > 0 || d.ngQty > 0 || d.isTotal) ? i : -1).filter(i => i !== -1);
+            const yearlyNgIndex = scannableNgIndices.length > 0 ? scannableNgIndices[autoPlayIndex % scannableNgIndices.length] : 0;
 
-                    let ngRow = findRowByMonthName(ws, 'A', mAbbr, 30, 65);
-                    if (ngRow === -1) ngRow = findRowByMonthName(ws, 'B', mAbbr, 30, 65);
-                    if (ngRow === -1) ngRow = 34 + idx;
-
-                    const oeeVal = ws[`C${oeeRow}`]?.v || 0;
-                    const outputVal = ws[`B${ngRow}`]?.v || 0;
-                    const qtyVal = ws[`E${ngRow}`]?.v || 0;
-                    const rateVal = ws[`F${ngRow}`]?.v || 0;
-
-                    newYearData[m].monthlySummary = {
-                        oee: Math.round((oeeVal <= 1 ? oeeVal * 100 : oeeVal) * 100) / 100,
-                        output: outputVal,
-                        ngQty: qtyVal,
-                        ngRate: Math.round((rateVal <= 1 ? rateVal * 100 : rateVal) * 100) / 100,
-                        ngBreakdown: ngTypesConfig.map(type => ({ 
-                            name: type.name, 
-                            value: ws[`${type.col}${ngRow}`]?.v || 0 
-                        }))
-                    };
-                });
-
-                const oeeAllVal = ws['C15']?.v || 0;
-                const ngAllVal = ws['P51']?.v || 0;
-                
-                const oeeAll = Math.round((oeeAllVal <= 1 ? oeeAllVal * 100 : oeeAllVal) * 100) / 100;
-                const ngAll = Math.round((ngAllVal <= 1 ? ngAllVal * 100 : ngAllVal) * 100) / 100;
-
-                setFullYearData(newYearData);
-                setOverallOee(oeeAll);
-                setOverallNgRate(ngAll);
-                await saveToCloud(newYearData, oeeAll, ngAll);
-            };
-
-            const handleSync = async () => {
-                if (!sheetInput) return setMessage({ type: 'error', text: 'กรุณาวางลิงก์ Google Sheets' });
-                setIsLoading(true);
-                try {
-                    const id = extractId(sheetInput);
-                    const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`;
-                    const res = await fetch(url);
-                    if (!res.ok) throw new Error("การเข้าถึงล้มเหลว ตรวจสอบการแชร์ไฟล์");
-                    const buf = await res.arrayBuffer();
-                    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
-                    await processWorkbook(wb);
-                } catch (e) { setMessage({ type: 'error', text: e.message }); }
-                finally { setIsLoading(false); setTimeout(() => setMessage(null), 3000); }
-            };
+            const pieData = currentData.monthlySummary.ngBreakdown ? currentData.monthlySummary.ngBreakdown.filter(d => d.value > 0) : [];
+            const pieIndex = pieData.length > 0 ? pieAutoPlayIndex % pieData.length : 0;
 
             const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
+                const file = e.target.files[0]; if (!file) return;
                 const reader = new FileReader();
-                reader.onload = async (evt) => {
+                reader.onload = (evt) => {
                     try {
-                        const wb = XLSX.read(evt.target.result, { type: 'binary' });
-                        await processWorkbook(wb);
+                        const bstr = evt.target.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const newYearData = { ...fullYearData };
+                        const summaryWs = wb.Sheets["Summary monthly"];
+                        const ngTypesConfig = [
+                            { name: 'Product lost', col: 'G' }, { name: 'QC Semple', col: 'H' }, { name: 'Test Thickness', col: 'I' },
+                            { name: 'Dent (Handling)', col: 'J' }, { name: 'Stain', col: 'K' }, { name: 'Plating abnormal', col: 'L' },
+                            { name: 'Blister', col: 'M' }, { name: 'Barrel not rotate', col: 'N' }, { name: 'Thickness out spec', col: 'O' }
+                        ];
+                        if (summaryWs) {
+                            const findRowByMonthName = (ws, col, mAbbr, startRow, endRow) => {
+                                const target = mAbbr.toLowerCase();
+                                for (let r = startRow; r <= endRow; r++) {
+                                    const cell = ws[`${col}${r}`];
+                                    if (cell) {
+                                        const cellText = cell.w ? String(cell.w).trim().toLowerCase() : String(cell.v).trim().toLowerCase();
+                                        if (cellText.startsWith(target)) return r;
+                                    }
+                                }
+                                return -1;
+                            };
+                            months.forEach((m, idx) => {
+                                const mAbbr = monthAbbr[idx]; 
+                                let oeeRow = findRowByMonthName(summaryWs, 'A', mAbbr, 2, 20);
+                                if (oeeRow === -1) oeeRow = findRowByMonthName(summaryWs, 'B', mAbbr, 2, 20);
+                                if (oeeRow === -1) oeeRow = 3 + idx; 
+                                let ngRow = findRowByMonthName(summaryWs, 'A', mAbbr, 30, 60);
+                                if (ngRow === -1) ngRow = 34 + idx; 
+                                const oeeVal = summaryWs[`C${oeeRow}`]?.v || 0;
+                                const outputVal = summaryWs[`B${ngRow}`]?.v || 0;
+                                const qtyVal = summaryWs[`E${ngRow}`]?.v || 0;
+                                const rateVal = summaryWs[`F${ngRow}`]?.v || 0;
+                                newYearData[m].monthlySummary.oee = Math.round((oeeVal <= 1 ? oeeVal * 100 : oeeVal) * 100) / 100;
+                                newYearData[m].monthlySummary.output = outputVal;
+                                newYearData[m].monthlySummary.ngQty = qtyVal;
+                                newYearData[m].monthlySummary.ngRate = Math.round((rateVal <= 1 ? rateVal * 100 : rateVal) * 100) / 100;
+                                newYearData[m].monthlySummary.ngBreakdown = ngTypesConfig.map(type => ({ name: type.name, value: summaryWs[`${type.col}${ngRow}`]?.v || 0 }));
+                            });
+                            setOverallNgRate(Math.round((summaryWs['P51']?.v || 0) * (summaryWs['P51']?.v <= 1 ? 100 : 1) * 100) / 100);
+                            setOverallOee(Math.round((summaryWs['C15']?.v || 0) * (summaryWs['C15']?.v <= 1 ? 100 : 1) * 100) / 100);
+                        }
+                        setFullYearData(newYearData);
+                        setSelectedMonth(getLatestMonthWithData(newYearData));
+                        setMessage({ type: 'success', text: `นำเข้าข้อมูลสำเร็จ!` });
+                        setTimeout(() => setMessage(null), 3000);
                     } catch (err) { setMessage({ type: 'error', text: 'รูปแบบไฟล์ไม่ถูกต้อง' }); }
-                    setTimeout(() => setMessage(null), 3000);
                 };
                 reader.readAsBinaryString(file);
             };
 
-            const pieData = (fullYearData[selectedMonth]?.monthlySummary?.ngBreakdown || []).filter(d => d.value > 0);
-            const pieIndex = pieData.length > 0 ? pieAutoPlayIndex % pieData.length : 0;
+            const handleSaveData = () => {
+                const dataToSave = { fullYearData, targets, overallNgRate, overallOee };
+                try { localStorage.setItem('oeeDashboardData', JSON.stringify(dataToSave)); setMessage({ type: 'success', text: 'บันทึกข้อมูลเรียบร้อยแล้ว' }); }
+                catch (e) { setMessage({ type: 'error', text: 'ไม่สามารถบันทึกได้' }); }
+                setTimeout(() => setMessage(null), 3000);
+            };
+
+            const updateSpecificMonthData = (month, field, value) => {
+                const numVal = (field === 'output' || field === 'ngQty') ? (parseInt(value) || 0) : (parseFloat(value) || 0);
+                setFullYearData(prev => ({ ...prev, [month]: { ...prev[month], monthlySummary: { ...prev[month].monthlySummary, [field]: numVal } } }));
+            };
+
+            const formatNumber = (num) => new Intl.NumberFormat().format(Math.round(num));
+            const toFixed2 = (num) => (typeof num === 'number' ? num : 0).toFixed(2);
 
             const renderDynamicBarLabel = (props, activeIdx, type, dataArray) => {
                 const { x, y, width, height, value, index } = props;
-                if (value === 0) return null;
-                const labelText = type === 'oee' ? `${toFixed2(value)}%` : formatNumber(value);
-                const labelNode = <text x={x + width / 2} y={y - 10} fill="#64748b" textAnchor="middle" fontSize={10} fontWeight="800">{labelText}</text>;
+                if (index !== activeIdx) return (type === 'oee' ? <text x={x + width / 2} y={y - 10} fill="#94a3b8" textAnchor="middle" fontSize={10} fontWeight="700">{toFixed2(value)}%</text> : null);
+                const isShort = height < 50; const boxY = isShort ? y - 48 : y + 8;
+                return (
+                    <g className="animate-fade-in-up" style={{ pointerEvents: 'none' }}>
+                        <rect x={x + width / 2 - 40} y={boxY} width={80} height={34} rx={6} fill="rgba(15, 23, 42, 0.85)" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+                        <text x={x + width / 2} y={boxY + 13} fill={type === 'oee' ? "#34d399" : "#f472b6"} textAnchor="middle" fontSize={10} fontWeight="900">{type === 'oee' ? `OEE: ${toFixed2(value)}%` : `NG: ${formatNumber(value)}`}</text>
+                        <text x={x + width / 2} y={boxY + 26} fill="#f8fafc" textAnchor="middle" fontSize={9} fontWeight="700">{type === 'oee' ? `Out: ${formatNumber(dataArray[index].output)}` : `Rate: ${toFixed2(dataArray[index].ngRate)}%`}</text>
+                    </g>
+                );
+            };
 
-                if (index === activeIdx) {
-                    const boxY = height < 50 ? y - 55 : y + 8;
-                    return (
-                        <g>
-                            {labelNode}
-                            <g className="animate-fade-in-up" style={{ pointerEvents: 'none' }}>
-                                <rect x={x + width / 2 - 40} y={boxY} width={80} height={34} rx={6} fill="rgba(15, 23, 42, 0.9)" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
-                                <text x={x + width / 2} y={boxY + 13} fill={type === 'oee' ? "#34d399" : "#f472b6"} textAnchor="middle" fontSize={10} fontWeight="900">{type === 'oee' ? `OEE: ${toFixed2(value)}%` : `NG: ${formatNumber(value)}`}</text>
-                                <text x={x + width / 2} y={boxY + 26} fill="#f8fafc" textAnchor="middle" fontSize={9} fontWeight="700">{type === 'oee' ? `Out: ${formatNumber(dataArray[index].output)}` : `Rate: ${toFixed2(dataArray[index].ngRate)}%`}</text>
-                            </g>
-                        </g>
-                    );
-                }
-                return labelNode;
+            const renderCustomDot = (props, activeIdx, color) => {
+                const { cx, cy, index } = props;
+                return <circle cx={cx} cy={cy} r={index === activeIdx ? 8 : 4} fill={color} stroke="#fff" strokeWidth={index === activeIdx ? 3 : 2} opacity={index === activeIdx ? 1 : 0.3} style={{ transition: 'all 0.5s' }} />;
             };
 
             const renderActivePieShape = (props) => {
@@ -390,229 +326,184 @@
                 );
             };
 
-            if (isLoading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse tracking-[0.2em]">SYNCHRONIZING CLOUD...</div>;
-
             return (
-                <div className="max-w-[95rem] mx-auto p-4 md:p-8 pb-12">
-                    <div className="mb-10 flex flex-col xl:flex-row items-center justify-between gap-6 glass-card p-8 rounded-[2.5rem]">
-                        <div className="flex items-center gap-6">
-                            <div className="p-4 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[1.5rem] text-white shadow-xl shadow-blue-200 transform hover:scale-105 transition-transform"><Icon name="Activity" size={40} /></div>
+                <div className={isFullscreen ? "fixed inset-0 z-[9999] w-full h-[100dvh] overflow-y-auto bg-[#f1f5f9] p-4 md:p-8 pb-12" : "max-w-[90rem] mx-auto p-4 md:p-8 pb-12 relative"} style={isFullscreen ? { backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '32px 32px' } : {}}>
+                    {/* --- HEADER --- */}
+                    <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6 glass-card p-6 md:p-8 rounded-[2rem]">
+                        <div className="flex items-center gap-5 group cursor-pointer relative z-10">
+                            <div className="p-4 bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600 rounded-[2rem] text-white shadow-xl shadow-blue-500/40 transform group-hover:scale-110 group-hover:-rotate-6 transition-all duration-500"><Icon name="Activity" size={40} /></div>
                             <div>
-                                <h1 className="text-4xl font-black text-slate-900 tracking-tighter leading-none mb-1 uppercase">OEE Production <br /> <span className="text-2xl text-blue-600/80">EN-Plating Dashboard</span></h1>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-black px-3 py-0.5 rounded-full italic tracking-widest uppercase shadow-sm ${window.fb && window.fb.isConfigured ? 'bg-slate-800 text-white' : 'bg-red-500 text-white'}`}>
-                                        {window.fb && window.fb.isConfigured ? 'GitHub Pages Ready' : 'Firebase Not Configured'}
-                                    </span>
-                                </div>
+                                <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none mb-3 bg-gradient-to-r from-slate-900 via-blue-800 to-slate-900 bg-clip-text text-transparent animate-gradient-x">OEE Production <br className="hidden md:block" /> <span className="text-3xl md:text-4xl bg-gradient-to-r from-slate-500 to-slate-400 bg-clip-text text-transparent">EN-Plating</span></h1>
+                                <div className="flex items-center gap-3"><span className="text-[11px] font-black text-white uppercase tracking-widest bg-slate-800 px-3 py-1 rounded-full italic shadow-md">Interactive Dashboard</span></div>
                             </div>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
-                            <div className="flex-1 min-w-[350px] flex items-center bg-slate-100/60 p-1.5 rounded-2xl border border-slate-200/60 shadow-inner">
-                                <Icon name="Link" size={16} className="mx-3 text-slate-400" />
-                                <input 
-                                    placeholder="วางลิงก์ Google Sheets ตรงนี้..." 
-                                    className="bg-transparent border-none outline-none text-xs font-black w-full p-2 text-slate-700"
-                                    value={sheetInput} onChange={(e) => setSheetInput(e.target.value)}
-                                />
-                                <button onClick={handleSync} className="bg-emerald-600 text-white px-6 py-3 rounded-xl text-[10px] font-black hover:bg-emerald-700 transition-all shadow-lg active:scale-95">SYNC LIVE</button>
-                            </div>
-                            <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx" onChange={handleFileUpload} />
-                            <button onClick={() => fileInputRef.current.click()} className="bg-white border-2 border-slate-200 hover:border-blue-400 text-slate-700 px-6 py-4 rounded-2xl text-[10px] font-black transition-all flex items-center gap-2 shadow-sm">
-                                <Icon name="FileUp" size={18} className="text-blue-500" /> IMPORT XLSX
-                            </button>
+                        <div className="flex flex-wrap items-center justify-end gap-4 relative z-10 mt-4 md:mt-0">
+                            <button onClick={toggleFullscreen} className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 px-6 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-sm"><Icon name={isFullscreen ? "Minimize" : "Maximize"} size={20} className="text-blue-500" /> {isFullscreen ? "ย่อหน้าจอ" : "เต็มจอ (FULLSCREEN)"}</button>
+                            {!isFullscreen && (
+                                <>
+                                    <button onClick={handleSaveData} className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-emerald-400 text-slate-700 hover:text-emerald-600 px-6 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-sm"><Icon name="Save" size={20} className="text-emerald-500" /> SAVE DATA</button>
+                                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="hidden" />
+                                    <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-8 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-lg"><Icon name="FileUp" size={20} /> IMPORT XLSX</button>
+                                </>
+                            )}
                         </div>
                     </div>
 
-                    {message && (
-                        <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-[100] px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce ${message.type === 'success' ? 'bg-slate-900 text-emerald-400 border border-emerald-900/50' : 'bg-red-600 text-white'}`}>
-                            <Icon name={message.type === 'success' ? "CheckCircle" : "AlertTriangle"} size={20} />
-                            <span className="font-black text-sm uppercase tracking-widest">{message.text}</span>
-                        </div>
-                    )}
+                    {message && <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce ${message.type === 'success' ? 'bg-slate-900 text-emerald-400 border border-emerald-900/50' : 'bg-red-600 text-white'}`}><Icon name={message.type === 'success' ? "CheckCircle2" : "AlertCircle"} size={20} /><span className="font-black text-sm uppercase tracking-widest">{message.text}</span></div>}
 
+                    {/* --- SUMMARY STATS (Reduced Size -30%) --- */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-10">
-                        <StatCard title={`OEE ${selectedMonth}`} value={fullYearData[selectedMonth]?.monthlySummary?.oee || 0} target={targets.oee} color="blue" icon="CalendarDays" unit="%" />
-                        <StatCard title="OEE Overall" value={overallOee} target={targets.oee} color="emerald" icon="Globe" unit="%" />
-                        <StatCard title="Total Output" value={fullYearData[selectedMonth]?.monthlySummary?.output || 0} color="amber" icon="Boxes" unit="Pcs" noTarget />
-                        <StatCard title="% NG Month" value={fullYearData[selectedMonth]?.monthlySummary?.ngRate || 0} target={targets.ng} color="pink" icon="TrendingDown" unit="%" isNg />
-                        <StatCard title="NG Qty Month" value={fullYearData[selectedMonth]?.monthlySummary?.ngQty || 0} color="red" icon="AlertTriangle" unit="Pcs" noTarget />
-                        <StatCard title="% NG Overall" value={overallNgRate} target={targets.ng} color="orange" icon="Activity" unit="%" isNg />
+                        <div className="glass-card p-5 border-t-4 border-t-blue-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="CalendarDays" size={16} className="text-blue-500" /> OEE เดือน{selectedMonth}</div>
+                            <div className={`text-4xl font-black tracking-tighter ${currentData.monthlySummary.oee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={currentData.monthlySummary.oee} formatter={toFixed2} />%</div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-md">{selectedMonth}</span></div>
+                        </div>
+                        <div className="glass-card p-5 border-t-4 border-t-emerald-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Globe" size={16} className="text-emerald-500" /> OEE Overall</div>
+                            <div className={`text-4xl font-black tracking-tighter ${overallOee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={overallOee} formatter={toFixed2} />%</div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">C15</span></div>
+                        </div>
+                        <div className="glass-card p-5 border-t-4 border-t-amber-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Boxes" size={16} className="text-amber-500" /> Total Output</div>
+                            <div className="text-4xl font-black text-amber-500 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.output} formatter={formatNumber} /></div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Total PCS</span><span className="text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-md">Summary</span></div>
+                        </div>
+                        <div className="glass-card p-5 border-t-4 border-t-pink-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="TrendingDown" size={16} className="text-pink-500" /> Total % NG</div>
+                            <div className={`text-4xl font-black tracking-tighter ${currentData.monthlySummary.ngRate <= targets.ng ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={currentData.monthlySummary.ngRate} formatter={toFixed2} />%</div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Limit: {targets.ng}%</span><span className="text-pink-600 bg-pink-100 px-1.5 py-0.5 rounded-md">Yield Rate</span></div>
+                        </div>
+                        <div className="glass-card p-5 border-t-4 border-t-red-600">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="AlertTriangle" size={16} className="text-red-600" /> Total NG Qty</div>
+                            <div className="text-4xl font-black text-red-600 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.ngQty} formatter={formatNumber} /></div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Reject PCS</span><span className="text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md">Summary</span></div>
+                        </div>
+                        <div className="glass-card p-5 border-t-4 border-t-orange-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Activity" size={16} className="text-orange-500" /> Total % NG Overall</div>
+                            <div className={`text-4xl font-black tracking-tighter ${overallNgRate <= targets.ng ? 'text-emerald-500' : 'text-red-600'}`}><AnimatedNumber value={overallNgRate} formatter={toFixed2} />%</div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Limit: {targets.ng}%</span><span className="text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded-md">P51</span></div>
+                        </div>
                     </div>
 
-                    <div className="space-y-10">
+                    {/* --- SECTION: CHART ZONE --- */}
+                    <div className="bg-white/40 backdrop-blur-3xl p-6 md:p-8 rounded-[3rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 mb-10 space-y-10">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="glass-card p-8 rounded-[3rem] animate-fade-in-up">
-                                {validOeeIndices.length > 0 && (
-                                    <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 z-20 overflow-hidden">
-                                        <div key={oeeAutoIndex} className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 animate-scan-progress shadow-[0_0_10px_#3b82f6]"></div>
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-4 mb-8 bg-blue-50/80 px-5 py-3 rounded-2xl w-fit border border-blue-100"><Icon name="BarChart2" className="text-blue-600" /><h3 className="text-xs font-black text-blue-700 uppercase tracking-widest">OEE Monthly Performance</h3></div>
-                                <div className="h-[400px]">
+                            {/* 1. Oee result On Month */}
+                            <div className="glass-card p-8 rounded-[3rem] relative animate-fade-in-up">
+                                <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 rounded-t-[3rem] overflow-hidden z-20"><div key={autoPlayIndex} className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 animate-scan-progress shadow-[0_0_10px_#3b82f6]"></div></div>
+                                <div className="flex items-center gap-4 mb-8 bg-blue-50/80 backdrop-blur-xl px-5 py-3 rounded-2xl w-fit border border-blue-100 shadow-sm relative z-10"><div className="p-2 bg-blue-600 text-white rounded-xl shadow-lg"><Icon name="BarChart2" size={20} /></div><h3 className="text-sm font-black text-blue-700 uppercase tracking-widest">Oee result On {selectedMonth}</h3></div>
+                                <div className="h-[400px] w-full relative z-10">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <ComposedChart data={annualChartData} margin={{ top: 30, right: 30, left: 0, bottom: 0 }}>
-                                            <defs>
-                                                <linearGradient id="barGreen3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" /><stop offset="100%" stopColor="#047857" /></linearGradient>
-                                                <linearGradient id="barRed3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" /><stop offset="100%" stopColor="#991b1b" /></linearGradient>
-                                                <linearGradient id="areaOutput" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.25} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
-                                            <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} />
-                                            <YAxis yAxisId="left" hide domain={[0, 110]} />
-                                            <YAxis yAxisId="right" hide />
-                                            <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} />
-                                            <ReferenceLine yAxisId="left" y={targets.oee} stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} />
+                                        <ComposedChart data={yearlyOeeData} margin={{ top: 20, right: 30, left: 10, bottom: 10 }}>
+                                            <defs><linearGradient id="barGreen3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" /><stop offset="100%" stopColor="#047857" /></linearGradient><linearGradient id="barRed3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" /><stop offset="100%" stopColor="#991b1b" /></linearGradient><linearGradient id="areaOutput" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.25} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient></defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeOpacity={0.4} />
+                                            <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#475569' }} dy={10} />
+                                            <YAxis yAxisId="left" domain={[0, 110]} hide /><YAxis yAxisId="right" orientation="right" hide />
+                                            <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', borderRadius: '20px', border: '1px solid #e2e8f0' }} />
+                                            <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: '900', paddingBottom: '20px' }} />
+                                            <ReferenceLine yAxisId="left" y={targets.oee} stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} label={{ position: 'top', value: `Target OEE ${targets.oee}%`, fill: '#f43f5e', fontSize: 10, fontWeight: 900 }} />
                                             <Area yAxisId="right" type="monotone" dataKey="output" fill="url(#areaOutput)" stroke="none" />
-                                            <Bar yAxisId="left" dataKey="oee" radius={[12, 12, 0, 0]} maxBarSize={45}>
-                                                {annualChartData.map((e, i) => <Cell key={i} fill={e.oee >= targets.oee ? 'url(#barGreen3D)' : 'url(#barRed3D)'} opacity={i === yearlyOeeIndex ? 1 : 0.4} />)}
-                                                <LabelList dataKey="oee" content={(p) => renderDynamicBarLabel(p, yearlyOeeIndex, 'oee', annualChartData)} />
+                                            <Bar yAxisId="left" dataKey="oee" name="OEE (%)" radius={[12, 12, 0, 0]} maxBarSize={45}>
+                                                {yearlyOeeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.oee >= targets.oee ? 'url(#barGreen3D)' : 'url(#barRed3D)'} opacity={index === yearlyOeeIndex ? 1 : 0.4} />)}
+                                                <LabelList dataKey="oee" content={(props) => renderDynamicBarLabel(props, yearlyOeeIndex, 'oee', yearlyOeeData)} />
                                             </Bar>
-                                            <Line yAxisId="right" type="monotone" dataKey="output" stroke="#f59e0b" strokeWidth={4} dot={false} />
+                                            <Line yAxisId="right" type="monotone" dataKey="output" name="Output Volume" stroke="#f59e0b" strokeWidth={4} dot={(props) => renderCustomDot(props, yearlyOeeIndex, '#f59e0b')} activeDot={{ r: 8, fill: '#f59e0b', stroke: '#fff', strokeWidth: 3 }} className="chart-glow" />
                                         </ComposedChart>
                                     </ResponsiveContainer>
                                 </div>
                             </div>
 
-                            <div className="glass-card p-8 rounded-[3rem] animate-fade-in-up">
-                                {validNgIndices.length > 0 && (
-                                    <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 z-20 overflow-hidden">
-                                        <div key={ngAutoIndex} className="h-full bg-gradient-to-r from-purple-400 to-pink-400 animate-scan-progress shadow-[0_0_10px_#d946ef]"></div>
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-4 mb-8 bg-purple-50/80 px-5 py-3 rounded-2xl w-fit border border-purple-100"><Icon name="ActivitySquare" className="text-purple-600" /><h3 className="text-xs font-black text-purple-700 uppercase tracking-widest">NG Quantity Monitoring</h3></div>
-                                <div className="h-[400px]">
+                            {/* 2. Total NG Plating result On Month (FIXED SCALE) */}
+                            <div className="glass-card p-8 rounded-[3rem] relative animate-fade-in-up">
+                                <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 rounded-t-[3rem] overflow-hidden z-20"><div key={autoPlayIndex} className="h-full bg-gradient-to-r from-purple-400 to-pink-400 animate-scan-progress shadow-[0_0_10px_#d946ef]"></div></div>
+                                <div className="flex items-center gap-4 mb-8 bg-purple-50/80 backdrop-blur-xl px-5 py-3 rounded-2xl w-fit border border-purple-100 shadow-sm relative z-10"><div className="p-2 bg-purple-600 text-white rounded-xl shadow-lg"><Icon name="ActivitySquare" size={20} /></div><h3 className="text-sm font-black text-purple-700 uppercase tracking-widest">Total NG Plating result On {selectedMonth}</h3></div>
+                                <div className="h-[400px] w-full relative z-10">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <ComposedChart data={annualChartData} margin={{ top: 30, right: 30, left: 0, bottom: 0 }}>
-                                            <defs>
-                                                <linearGradient id="barNg3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d946ef" /><stop offset="100%" stopColor="#701a75" /></linearGradient>
-                                                <linearGradient id="areaNgRate" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ec4899" stopOpacity={0.2} /><stop offset="100%" stopColor="#ec4899" stopOpacity={0} /></linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
-                                            <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} />
+                                        <ComposedChart data={annualChartData} margin={{ top: 20, right: 30, left: 10, bottom: 10 }}>
+                                            <defs><linearGradient id="barNg3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d946ef" /><stop offset="100%" stopColor="#701a75" /></linearGradient><linearGradient id="barNgTotal3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366f1" /><stop offset="100%" stopColor="#312e81" /></linearGradient><linearGradient id="areaNgRate" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ec4899" stopOpacity={0.2} /><stop offset="100%" stopColor="#ec4899" stopOpacity={0} /></linearGradient></defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeOpacity={0.4} />
+                                            <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#475569' }} dy={10} />
                                             <YAxis yAxisId="left" hide />
-                                            <YAxis yAxisId="right" hide domain={[0, d => Math.max(d, targets.ng) * 1.5]} />
-                                            <ReferenceLine yAxisId="right" y={targets.ng} stroke="#ef4444" strokeDasharray="10 5" strokeWidth={2} />
+                                            {/* ปรับสเกลอัตโนมัติให้สัมพันธ์กับข้อมูลจริง และเส้น Limit จะคำนวณจากค่าสูงสุดของข้อมูล */}
+                                            <YAxis yAxisId="right" orientation="right" domain={[0, (dataMax) => Math.max(dataMax, targets.ng) * 1.5]} hide />
+                                            <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', borderRadius: '20px', border: '1px solid #e2e8f0' }} />
+                                            <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: '900', paddingBottom: '20px' }} />
+                                            <ReferenceLine yAxisId="right" y={targets.ng} stroke="#ef4444" strokeDasharray="10 5" strokeWidth={2.5} label={{ position: 'top', value: `Limit ${targets.ng}%`, fill: '#ef4444', fontSize: 11, fontWeight: 900 }} />
                                             <Area yAxisId="right" type="monotone" dataKey="ngRate" fill="url(#areaNgRate)" stroke="none" />
-                                            <Bar yAxisId="left" dataKey="ngQty" radius={[12, 12, 0, 0]} maxBarSize={45}>
-                                                {annualChartData.map((e, i) => <Cell key={i} fill="url(#barNg3D)" opacity={i === yearlyNgIndex ? 1 : 0.4} />)}
-                                                <LabelList dataKey="ngQty" content={(p) => renderDynamicBarLabel(p, yearlyNgIndex, 'ngQty', annualChartData)} />
+                                            <Bar yAxisId="left" dataKey="ngQty" name="NG Quantity" radius={[12, 12, 0, 0]} maxBarSize={45}>
+                                                {annualChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.isTotal ? 'url(#barNgTotal3D)' : 'url(#barNg3D)'} opacity={index === yearlyNgIndex ? 1 : 0.4} />)}
+                                                <LabelList dataKey="ngQty" content={(props) => renderDynamicBarLabel(props, yearlyNgIndex, 'ngQty', annualChartData)} />
                                             </Bar>
-                                            <Line yAxisId="right" type="monotone" dataKey="ngRate" stroke="#ec4899" strokeWidth={4} dot={false} />
+                                            <Line yAxisId="right" type="monotone" dataKey="ngRate" name="NG Rate (%)" stroke="#ec4899" strokeWidth={4} dot={(props) => renderCustomDot(props, yearlyNgIndex, '#ec4899')} activeDot={{ r: 8, fill: '#ec4899', stroke: '#fff', strokeWidth: 3 }} className="chart-glow" />
                                         </ComposedChart>
                                     </ResponsiveContainer>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex justify-center">
-                            <div className="w-full max-w-[1000px] bg-slate-900 border border-slate-700 shadow-[0_30px_60px_rgba(0,0,0,0.5)] p-12 rounded-[4rem] relative overflow-hidden animate-fade-in-up">
-                                <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/50 z-20 overflow-hidden"><div key={pieAutoPlayIndex} className="h-full bg-gradient-to-r from-rose-400 to-orange-400 animate-scan-progress-pie"></div></div>
-                                <div className="flex items-center gap-4 mb-8 bg-slate-800/60 p-3 pr-6 rounded-2xl border border-slate-700 w-fit relative z-20">
-                                    <div className="p-3 bg-gradient-to-br from-rose-500 to-orange-600 text-white rounded-xl shadow-lg"><Icon name="PieChart" size={24} /></div>
-                                    <div><h3 className="text-lg font-black text-white uppercase tracking-widest">NG Breakdown</h3><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Month: {selectedMonth}</p></div>
+                        {/* Pie Chart */}
+                        <div className="flex justify-center mt-12">
+                            <div className="w-full max-w-[1000px] bg-slate-900 border border-slate-700 shadow-[0_30px_60px_rgba(0,0,0,0.5)] p-10 md:p-14 rounded-[4rem] relative overflow-hidden flex flex-col animate-fade-in-up">
+                                <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/50 rounded-t-[4rem] overflow-hidden z-20"><div key={pieAutoPlayIndex} className="h-full bg-gradient-to-r from-rose-400 to-orange-400 animate-scan-progress-pie"></div></div>
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] border border-slate-700/50 rounded-full animate-pulse-ring pointer-events-none"></div>
+                                <div className="flex items-center gap-4 mb-4 relative z-20 bg-slate-800/60 backdrop-blur w-fit p-3 pr-6 rounded-2xl border border-slate-700">
+                                    <div className="p-3 bg-gradient-to-br from-rose-500 to-orange-600 text-white rounded-xl"><Icon name="PieChart" size={24} /></div>
+                                    <div><h3 className="text-lg font-black text-white uppercase tracking-widest leading-tight">NG Type Distribution</h3><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 italic">Monthly Breakdown: {selectedMonth}</p></div>
                                 </div>
-                                <div className="h-[500px] relative z-10">
+                                <div className="flex-1 w-full min-h-[500px] relative z-10">
                                     {pieData.length > 0 ? (
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
-                                                <Pie activeIndex={pieIndex} activeShape={renderActivePieShape} data={pieData} cx="50%" cy="50%" innerRadius={120} outerRadius={180} paddingAngle={4} dataKey="value" animationDuration={1500}>
-                                                    {pieData.map((e, i) => <Cell key={i} fill={['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16'][i % 9]} opacity={i === pieIndex ? 1 : 0.4} stroke={i === pieIndex ? '#fff' : 'none'} strokeWidth={3} />)}
+                                                <Pie activeIndex={pieIndex} activeShape={renderActivePieShape} data={pieData} cx="50%" cy="50%" innerRadius={110} outerRadius={170} paddingAngle={4} dataKey="value" animationDuration={1500}>
+                                                    {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16'][index % 9]} opacity={index === pieIndex ? 1 : 0.4} stroke={index === pieIndex ? '#fff' : 'none'} strokeWidth={3} />)}
                                                 </Pie>
-                                                <Tooltip formatter={(v, n) => [formatNumber(v) + ' Pcs.', n]} contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', color: '#fff' }} />
+                                                <Tooltip formatter={(value, name) => [formatNumber(value) + ' Pcs.', name]} contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', color: '#fff' }} />
+                                                <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', paddingTop: '30px' }} />
                                             </PieChart>
                                         </ResponsiveContainer>
-                                    ) : <div className="flex flex-col items-center justify-center h-full text-slate-500 font-black uppercase tracking-[0.2em] italic opacity-50"><Icon name="Inbox" size={48} className="mb-4" />No Data</div>}
+                                    ) : <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm font-bold uppercase tracking-widest italic opacity-50"><Icon name="Inbox" size={40} />No Rejection Data for {selectedMonth}</div>}
                                 </div>
-                            </div>
-                        </div>
-
-                        <div className="glass-card p-8 rounded-[3rem] animate-fade-in-up">
-                            <div className="flex items-center justify-between mb-8">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-slate-100 rounded-xl text-slate-500"><Icon name="SlidersHorizontal" size={20} /></div>
-                                    <h2 className="text-lg font-black text-slate-800 uppercase italic">Month Selection & Cloud Save</h2>
-                                </div>
-                                <button onClick={() => saveToCloud()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-2xl font-black text-xs transition-all shadow-lg flex items-center gap-2 active:scale-95">
-                                    <Icon name="CloudUpload" size={18} /> SAVE CURRENT DATA TO CLOUD
-                                </button>
-                            </div>
-                            <div className="overflow-x-auto custom-scrollbar">
-                                <table className="w-full text-left">
-                                    <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                                        <tr><th className="pb-4 pl-6">Month</th><th className="pb-4 text-center">OEE (%)</th><th className="pb-4 text-center">Output (Pcs)</th><th className="pb-4 text-center">NG Qty (Pcs)</th><th className="pb-4 text-center">Select</th></tr>
-                                    </thead>
-                                    <tbody>
-                                        {months.map(m => (
-                                            <tr key={m} className={`border-b border-slate-50 transition-all ${selectedMonth === m ? 'bg-blue-50/80' : 'hover:bg-slate-50'}`}>
-                                                <td className="py-4 pl-6 text-xs font-black text-slate-700">{m}</td>
-                                                <td className="py-2 text-center">
-                                                    <input 
-                                                        type="number" step="0.01" 
-                                                        className="w-20 bg-white border border-slate-200 rounded-lg p-1 text-center text-xs font-black text-blue-600 focus:ring-2 focus:ring-blue-100 outline-none"
-                                                        value={fullYearData[m]?.monthlySummary?.oee || 0}
-                                                        onChange={(e) => {
-                                                            const val = parseFloat(e.target.value) || 0;
-                                                            setFullYearData(prev => ({...prev, [m]: {...prev[m], monthlySummary: {...prev[m].monthlySummary, oee: val}}}));
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td className="py-2 text-center">
-                                                    <input 
-                                                        type="number"
-                                                        className="w-28 bg-white border border-slate-200 rounded-lg p-1 text-center text-xs font-black text-slate-600 focus:ring-2 focus:ring-blue-100 outline-none"
-                                                        value={fullYearData[m]?.monthlySummary?.output || 0}
-                                                        onChange={(e) => {
-                                                            const val = parseInt(e.target.value) || 0;
-                                                            setFullYearData(prev => ({...prev, [m]: {...prev[m], monthlySummary: {...prev[m].monthlySummary, output: val}}}));
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td className="py-2 text-center">
-                                                    <input 
-                                                        type="number"
-                                                        className="w-20 bg-white border border-slate-200 rounded-lg p-1 text-center text-xs font-black text-red-600 focus:ring-2 focus:ring-blue-100 outline-none"
-                                                        value={fullYearData[m]?.monthlySummary?.ngQty || 0}
-                                                        onChange={(e) => {
-                                                            const val = parseInt(e.target.value) || 0;
-                                                            setFullYearData(prev => ({...prev, [m]: {...prev[m], monthlySummary: {...prev[m].monthlySummary, ngQty: val}}}));
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td className="py-2 text-center">
-                                                    <button onClick={() => setSelectedMonth(m)} className={`p-2 rounded-xl transition-all shadow-sm ${selectedMonth === m ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-400'}`}>
-                                                        <Icon name="MousePointer2" size={14} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
                             </div>
                         </div>
                     </div>
 
-                    <div className="mt-12 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] italic"><Icon name="Zap" size={14} className="inline mr-2 text-amber-500 animate-pulse" /> EN Plating Division • Standalone GitHub App</div>
-                </div>
-            );
-        };
-
-        const StatCard = ({ title, value, target, unit, color, icon, isNg, noTarget }) => {
-            const isGood = isNg ? value <= target : value >= target;
-            const colors = { blue: "border-blue-500 text-blue-600", emerald: "border-emerald-500 text-emerald-600", amber: "border-amber-500 text-amber-600", pink: "border-pink-500 text-pink-600", red: "border-red-600 text-red-600", orange: "border-orange-500 text-orange-600" };
-            return (
-                <div className={`glass-card p-6 border-t-4 ${colors[color]} animate-fade-in-up`}>
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Icon name={icon} size={14} className={colors[color].split(' ')[1]} /> {title}</div>
-                    <div className={`text-3xl xl:text-4xl font-black tracking-tighter ${!noTarget ? (isGood ? 'text-emerald-500' : 'text-red-500') : ''}`}>
-                        <AnimatedNumber value={value} formatter={v => v.toLocaleString(undefined, { minimumFractionDigits: unit === '%' ? 2 : 0, maximumFractionDigits: 2 })} />
-                        <span className="text-sm ml-1 opacity-40">{unit}</span>
-                    </div>
-                    {!noTarget && (
-                        <div className="mt-4 flex justify-between text-[9px] font-bold text-slate-400 bg-slate-50/80 px-2 py-1.5 rounded-xl border border-white/50">
-                            <span>LIMIT: {target}{unit}</span>
-                            <span className={isGood ? 'text-emerald-600' : 'text-red-600'}>{isGood ? 'PASS' : 'FAIL'}</span>
+                    {/* --- DATA ENTRY --- */}
+                    {!isFullscreen && (
+                        <div className="mb-10 bg-white/60 backdrop-blur-xl p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-white overflow-hidden transition-all duration-300">
+                            <div className={`flex items-center justify-between cursor-pointer group ${showInputPanel ? 'mb-8 border-b border-slate-200/60 pb-5' : ''}`} onClick={() => setShowInputPanel(!showInputPanel)}>
+                                <div className="flex items-center gap-3"><div className="p-2 bg-amber-100 rounded-xl text-amber-500"><Icon name="SlidersHorizontal" size={24} /></div><h2 className="text-lg font-black text-slate-800 uppercase italic">แผงจัดการข้อมูล (Input Panel)</h2></div>
+                                <button className="flex items-center gap-2 text-xs font-black text-slate-500 bg-white shadow-sm px-4 py-2 rounded-full border border-slate-200 hover:border-amber-300 transition-all">{showInputPanel ? <><Icon name="EyeOff" size={16} /> ซ่อนแผงข้อมูล</> : <><Icon name="Eye" size={16} /> แสดงแผงข้อมูล</>}</button>
+                            </div>
+                            {showInputPanel && (
+                                <div className="w-full">
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><Icon name="Calendar" size={14} /> ตารางสรุป 12 เดือน</h3>
+                                    <div className="overflow-x-auto custom-scrollbar">
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic border-b-2 border-slate-200/60">
+                                                    <th className="pb-3 pl-2">เดือน</th><th className="pb-3 text-center">OEE (%)</th><th className="pb-3 text-center">Output (Pcs)</th><th className="pb-3 text-center">NG (Qty)</th><th className="pb-3 text-center">NG (%)</th><th className="pb-3 text-right pr-2">เลือก</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {months.map((m, idx) => (
+                                                    <tr key={idx} className={`border-b border-slate-100 transition-all duration-300 ${selectedMonth === m ? 'bg-blue-50/80 shadow-inner' : 'hover:bg-slate-50'}`}>
+                                                        <td className="py-2 pl-2"><span className={`text-xs font-black ${selectedMonth === m ? 'text-blue-600' : 'text-slate-600'}`}>{m}</span></td>
+                                                        <td className="py-1 text-center"><input type="number" step="0.01" value={fullYearData[m].monthlySummary.oee} onChange={(e) => updateSpecificMonthData(m, 'oee', e.target.value)} className="w-24 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-blue-600 text-center outline-none" /></td>
+                                                        <td className="py-1 text-center"><input type="number" value={fullYearData[m].monthlySummary.output} onChange={(e) => updateSpecificMonthData(m, 'output', e.target.value)} className="w-32 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-indigo-600 text-center outline-none" /></td>
+                                                        <td className="py-1 text-center"><input type="number" value={fullYearData[m].monthlySummary.ngQty} onChange={(e) => updateSpecificMonthData(m, 'ngQty', e.target.value)} className="w-24 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-rose-500 text-center outline-none" /></td>
+                                                        <td className="py-1 text-center"><input type="number" step="0.01" value={fullYearData[m].monthlySummary.ngRate} onChange={(e) => updateSpecificMonthData(m, 'ngRate', e.target.value)} className="w-24 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-black text-rose-600 text-center outline-none" /></td>
+                                                        <td className="py-1 text-right pr-2"><button onClick={() => setSelectedMonth(m)} className={`p-1.5 rounded-xl transition-all ${selectedMonth === m ? 'bg-blue-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-400 hover:text-blue-600'}`}><Icon name="MousePointer2" size={14} /></button></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
+
+                    <div className="mt-8 text-center"><div className="inline-flex items-center gap-3 px-8 py-3 bg-white/60 backdrop-blur-md rounded-full text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] border border-white shadow-sm italic"><Icon name="Zap" size={14} className="text-amber-500 animate-pulse" /> EN Plating Solero Division • Advanced Dashboard Experience</div></div>
                 </div>
             );
         };
