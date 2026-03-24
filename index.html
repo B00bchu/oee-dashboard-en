@@ -50,9 +50,15 @@
         import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const getFirebaseConfig = () => {
+            // Priority 1: Environment variable from hosting/Gemini
             try {
-                if (typeof __firebase_config !== 'undefined') return JSON.parse(__firebase_config);
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    return JSON.parse(__firebase_config);
+                }
             } catch (e) {}
+
+            // Priority 2: Manual Config (For GitHub Pages)
+            // เปลี่ยนค่าเหล่านี้เป็นข้อมูลจริงจาก Firebase Console ของคุณ
             return {
                 apiKey: "YOUR_API_KEY",
                 authDomain: "YOUR_PROJECT.firebaseapp.com",
@@ -64,15 +70,27 @@
         };
 
         const config = getFirebaseConfig();
-        const app = initializeApp(config);
+        let isConfigValid = config.apiKey && config.apiKey !== "YOUR_API_KEY";
+
+        if (isConfigValid) {
+            try {
+                const app = initializeApp(config);
+                window.fb = {
+                    auth: getAuth(app),
+                    db: getFirestore(app),
+                    doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
+                    appId: typeof __app_id !== 'undefined' ? __app_id : 'oee-plating-github-app',
+                    initialToken: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null,
+                    isConfigured: true
+                };
+            } catch (e) {
+                console.error("Firebase Init Error:", e);
+                window.fb = { isConfigured: false };
+            }
+        } else {
+            window.fb = { isConfigured: false, appId: 'oee-plating-github-app' };
+        }
         
-        window.fb = {
-            auth: getAuth(app),
-            db: getFirestore(app),
-            doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
-            appId: typeof __app_id !== 'undefined' ? __app_id : 'oee-plating-github-app',
-            initialToken: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null
-        };
         window.dispatchEvent(new CustomEvent('firebase-ready'));
     </script>
 
@@ -143,24 +161,41 @@
             const [ngAutoIndex, setNgAutoIndex] = useState(0);
             const [pieAutoPlayIndex, setPieAutoPlayIndex] = useState(0);
 
+            // Handle Authentication and Initial Loading State
             useEffect(() => {
                 const setupAuth = async () => {
                     if (!window.fb) return;
+                    
+                    if (!window.fb.isConfigured) {
+                        setIsLoading(false); // Skip loading if Firebase isn't configured
+                        return;
+                    }
+
                     const { auth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, initialToken } = window.fb;
                     try {
                         if (initialToken) await signInWithCustomToken(auth, initialToken);
                         else await signInAnonymously(auth);
-                    } catch (e) { console.error("Auth Error:", e); }
+                    } catch (e) { 
+                        console.error("Auth Error:", e);
+                        setIsLoading(false);
+                    }
                     onAuthStateChanged(auth, setUser);
                 };
+
                 if (window.fb) setupAuth();
                 else window.addEventListener('firebase-ready', setupAuth);
+
+                // Safety timeout: If nothing loads in 5 seconds, show UI anyway
+                const timer = setTimeout(() => setIsLoading(false), 5000);
+                return () => clearTimeout(timer);
             }, []);
 
+            // Firestore Data Listener
             useEffect(() => {
-                if (!user || !window.fb) return;
+                if (!user || !window.fb || !window.fb.db) return;
                 const { db, doc, onSnapshot, appId } = window.fb;
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'oeeDashboard', 'main');
+                
                 const unsubscribe = onSnapshot(docRef, (snap) => {
                     if (snap.exists()) {
                         const d = snap.data();
@@ -171,7 +206,10 @@
                         if (d.sheetId) setSheetInput(d.sheetId);
                     }
                     setIsLoading(false);
-                }, (err) => { console.error("Firestore Error:", err); setIsLoading(false); });
+                }, (err) => { 
+                    console.error("Firestore Error:", err); 
+                    setIsLoading(false); 
+                });
                 return () => unsubscribe();
             }, [user]);
 
@@ -215,7 +253,12 @@
             };
 
             const saveToCloud = async (overrideData = null, overrideOee = null, overrideNg = null) => {
-                if (!user || !window.fb) return;
+                if (!window.fb || !window.fb.isConfigured) {
+                    setMessage({ type: 'error', text: 'ไม่ได้ตั้งค่า Firebase Cloud' });
+                    setTimeout(() => setMessage(null), 3000);
+                    return;
+                }
+                if (!user) return;
                 const { db, doc, setDoc, appId } = window.fb;
                 try {
                     const dataToSave = {
@@ -229,7 +272,7 @@
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oeeDashboard', 'main'), dataToSave);
                     setMessage({ type: 'success', text: 'บันทึกข้อมูลลง Cloud สำเร็จ!' });
                     setTimeout(() => setMessage(null), 3000);
-                } catch (e) { setMessage({ type: 'error', text: 'บันทึกล้มเหลว' }); }
+                } catch (e) { setMessage({ type: 'error', text: 'บันทึกล้มเหลว: ' + e.message }); }
             };
 
             const processWorkbook = async (wb) => {
@@ -347,7 +390,7 @@
                 );
             };
 
-            if (isLoading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse tracking-[0.2em]">STANDALONE APP INITIALIZING...</div>;
+            if (isLoading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse tracking-[0.2em]">SYNCHRONIZING CLOUD...</div>;
 
             return (
                 <div className="max-w-[95rem] mx-auto p-4 md:p-8 pb-12">
@@ -357,7 +400,9 @@
                             <div>
                                 <h1 className="text-4xl font-black text-slate-900 tracking-tighter leading-none mb-1 uppercase">OEE Production <br /> <span className="text-2xl text-blue-600/80">EN-Plating Dashboard</span></h1>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black bg-slate-800 text-white px-3 py-0.5 rounded-full italic tracking-widest uppercase shadow-sm">GitHub Pages Ready</span>
+                                    <span className={`text-[10px] font-black px-3 py-0.5 rounded-full italic tracking-widest uppercase shadow-sm ${window.fb && window.fb.isConfigured ? 'bg-slate-800 text-white' : 'bg-red-500 text-white'}`}>
+                                        {window.fb && window.fb.isConfigured ? 'GitHub Pages Ready' : 'Firebase Not Configured'}
+                                    </span>
                                 </div>
                             </div>
                         </div>
