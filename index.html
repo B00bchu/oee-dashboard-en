@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OEE Production EN-Plating (Cloud Sync)</title>
+    <title>OEE Production EN-Plating (GitHub Compatible)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -30,8 +30,6 @@
         
         @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(30px) scale(0.95); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
         .animate-fade-in-up { animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
-        
-        .chart-glow { filter: drop-shadow(0px 8px 12px rgba(0, 0, 0, 0.08)); }
     </style>
 </head>
 <body>
@@ -45,26 +43,37 @@
     <script src="https://unpkg.com/lucide@0.453.0/dist/umd/lucide.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDKs (Module) -->
+    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        try {
-            const firebaseConfig = JSON.parse(__firebase_config);
-            const app = initializeApp(firebaseConfig);
-            window.fb = {
-                auth: getAuth(app),
-                db: getFirestore(app),
-                doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
-                appId: typeof __app_id !== 'undefined' ? __app_id : 'oee-plating-dashboard',
-                initialToken: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null
+        const getFirebaseConfig = () => {
+            try {
+                if (typeof __firebase_config !== 'undefined') return JSON.parse(__firebase_config);
+            } catch (e) {}
+            return {
+                apiKey: "YOUR_API_KEY",
+                authDomain: "YOUR_PROJECT.firebaseapp.com",
+                projectId: "YOUR_PROJECT_ID",
+                storageBucket: "YOUR_PROJECT.appspot.com",
+                messagingSenderId: "YOUR_ID",
+                appId: "YOUR_APP_ID"
             };
-            window.dispatchEvent(new CustomEvent('firebase-ready'));
-        } catch (e) {
-            console.error("Firebase Init Error:", e);
-        }
+        };
+
+        const config = getFirebaseConfig();
+        const app = initializeApp(config);
+        
+        window.fb = {
+            auth: getAuth(app),
+            db: getFirestore(app),
+            doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
+            appId: typeof __app_id !== 'undefined' ? __app_id : 'oee-plating-github-app',
+            initialToken: typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null
+        };
+        window.dispatchEvent(new CustomEvent('firebase-ready'));
     </script>
 
     <!-- Application Script (Babel) -->
@@ -130,7 +139,6 @@
             const [isLoading, setIsLoading] = useState(true);
             const [message, setMessage] = useState(null);
             
-            // แยก Auto-play index สำหรับแต่ละกราฟ เพื่อให้สแกนเฉพาะตัวที่มีข้อมูล
             const [oeeAutoIndex, setOeeAutoIndex] = useState(0);
             const [ngAutoIndex, setNgAutoIndex] = useState(0);
             const [pieAutoPlayIndex, setPieAutoPlayIndex] = useState(0);
@@ -142,7 +150,7 @@
                     try {
                         if (initialToken) await signInWithCustomToken(auth, initialToken);
                         else await signInAnonymously(auth);
-                    } catch (e) { console.error(e); }
+                    } catch (e) { console.error("Auth Error:", e); }
                     onAuthStateChanged(auth, setUser);
                 };
                 if (window.fb) setupAuth();
@@ -163,7 +171,7 @@
                         if (d.sheetId) setSheetInput(d.sheetId);
                     }
                     setIsLoading(false);
-                }, (err) => { console.error(err); setIsLoading(false); });
+                }, (err) => { console.error("Firestore Error:", err); setIsLoading(false); });
                 return () => unsubscribe();
             }, [user]);
 
@@ -175,25 +183,18 @@
                 ngQty: fullYearData[m]?.monthlySummary?.ngQty || 0
             })), [fullYearData]);
 
-            // หา Index ของเดือนที่มีข้อมูล (Value > 0)
             const validOeeIndices = useMemo(() => annualChartData.map((d, i) => d.oee > 0 ? i : -1).filter(i => i !== -1), [annualChartData]);
             const validNgIndices = useMemo(() => annualChartData.map((d, i) => d.ngQty > 0 ? i : -1).filter(i => i !== -1), [annualChartData]);
 
-            // ระบบ Auto-play เฉพาะเดือนที่มีค่า
             useEffect(() => {
                 const timer = setInterval(() => {
-                    if (validOeeIndices.length > 0) {
-                        setOeeAutoIndex(prev => (prev + 1) % validOeeIndices.length);
-                    }
-                    if (validNgIndices.length > 0) {
-                        setNgAutoIndex(prev => (prev + 1) % validNgIndices.length);
-                    }
+                    if (validOeeIndices.length > 0) setOeeAutoIndex(prev => (prev + 1) % validOeeIndices.length);
+                    if (validNgIndices.length > 0) setNgAutoIndex(prev => (prev + 1) % validNgIndices.length);
                 }, 10000);
                 const pieTimer = setInterval(() => setPieAutoPlayIndex(p => p + 1), 6000);
                 return () => { clearInterval(timer); clearInterval(pieTimer); };
             }, [validOeeIndices, validNgIndices]);
 
-            // คำนวณ Index จริงที่จะใช้แสดงผล
             const yearlyOeeIndex = validOeeIndices.length > 0 ? validOeeIndices[oeeAutoIndex] : -1;
             const yearlyNgIndex = validNgIndices.length > 0 ? validNgIndices[ngAutoIndex] : -1;
 
@@ -228,9 +229,7 @@
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oeeDashboard', 'main'), dataToSave);
                     setMessage({ type: 'success', text: 'บันทึกข้อมูลลง Cloud สำเร็จ!' });
                     setTimeout(() => setMessage(null), 3000);
-                } catch (e) {
-                    setMessage({ type: 'error', text: 'บันทึกล้มเหลว' });
-                }
+                } catch (e) { setMessage({ type: 'error', text: 'บันทึกล้มเหลว' }); }
             };
 
             const processWorkbook = async (wb) => {
@@ -317,20 +316,12 @@
 
             const renderDynamicBarLabel = (props, activeIdx, type, dataArray) => {
                 const { x, y, width, height, value, index } = props;
-                const labelText = type === 'oee' ? `${toFixed2(value)}%` : formatNumber(value);
-                
-                // ไม่ต้องแสดง Label ถ้าค่าเป็น 0
                 if (value === 0) return null;
-
-                const labelNode = (
-                    <text x={x + width / 2} y={y - 10} fill="#64748b" textAnchor="middle" fontSize={10} fontWeight="800">
-                        {labelText}
-                    </text>
-                );
+                const labelText = type === 'oee' ? `${toFixed2(value)}%` : formatNumber(value);
+                const labelNode = <text x={x + width / 2} y={y - 10} fill="#64748b" textAnchor="middle" fontSize={10} fontWeight="800">{labelText}</text>;
 
                 if (index === activeIdx) {
-                    const isShort = height < 50; 
-                    const boxY = isShort ? y - 55 : y + 8;
+                    const boxY = height < 50 ? y - 55 : y + 8;
                     return (
                         <g>
                             {labelNode}
@@ -356,18 +347,17 @@
                 );
             };
 
-            if (isLoading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse tracking-[0.2em]">SYNCHRONIZING CLOUD...</div>;
+            if (isLoading) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse tracking-[0.2em]">STANDALONE APP INITIALIZING...</div>;
 
             return (
                 <div className="max-w-[95rem] mx-auto p-4 md:p-8 pb-12">
-                    {/* Header Section */}
                     <div className="mb-10 flex flex-col xl:flex-row items-center justify-between gap-6 glass-card p-8 rounded-[2.5rem]">
                         <div className="flex items-center gap-6">
                             <div className="p-4 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[1.5rem] text-white shadow-xl shadow-blue-200 transform hover:scale-105 transition-transform"><Icon name="Activity" size={40} /></div>
                             <div>
-                                <h1 className="text-4xl font-black text-slate-900 tracking-tighter leading-none mb-1 uppercase">OEE Production <br /> <span className="text-2xl text-blue-600/80">EN-Plating Cloud</span></h1>
+                                <h1 className="text-4xl font-black text-slate-900 tracking-tighter leading-none mb-1 uppercase">OEE Production <br /> <span className="text-2xl text-blue-600/80">EN-Plating Dashboard</span></h1>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black bg-slate-800 text-white px-3 py-0.5 rounded-full italic tracking-widest uppercase shadow-sm">Cloud Active</span>
+                                    <span className="text-[10px] font-black bg-slate-800 text-white px-3 py-0.5 rounded-full italic tracking-widest uppercase shadow-sm">GitHub Pages Ready</span>
                                 </div>
                             </div>
                         </div>
@@ -396,55 +386,49 @@
                         </div>
                     )}
 
-                    {/* Stats Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-10">
                         <StatCard title={`OEE ${selectedMonth}`} value={fullYearData[selectedMonth]?.monthlySummary?.oee || 0} target={targets.oee} color="blue" icon="CalendarDays" unit="%" />
-                        <StatCard title="OEE Overall (C15)" value={overallOee} target={targets.oee} color="emerald" icon="Globe" unit="%" />
+                        <StatCard title="OEE Overall" value={overallOee} target={targets.oee} color="emerald" icon="Globe" unit="%" />
                         <StatCard title="Total Output" value={fullYearData[selectedMonth]?.monthlySummary?.output || 0} color="amber" icon="Boxes" unit="Pcs" noTarget />
                         <StatCard title="% NG Month" value={fullYearData[selectedMonth]?.monthlySummary?.ngRate || 0} target={targets.ng} color="pink" icon="TrendingDown" unit="%" isNg />
                         <StatCard title="NG Qty Month" value={fullYearData[selectedMonth]?.monthlySummary?.ngQty || 0} color="red" icon="AlertTriangle" unit="Pcs" noTarget />
-                        <StatCard title="% NG Overall (P51)" value={overallNgRate} target={targets.ng} color="orange" icon="Activity" unit="%" isNg />
+                        <StatCard title="% NG Overall" value={overallNgRate} target={targets.ng} color="orange" icon="Activity" unit="%" isNg />
                     </div>
 
-                    {/* Charts Zone */}
                     <div className="space-y-10">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* OEE Chart */}
                             <div className="glass-card p-8 rounded-[3rem] animate-fade-in-up">
                                 {validOeeIndices.length > 0 && (
                                     <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 z-20 overflow-hidden">
                                         <div key={oeeAutoIndex} className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 animate-scan-progress shadow-[0_0_10px_#3b82f6]"></div>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-4 mb-8 bg-blue-50/80 px-5 py-3 rounded-2xl w-fit border border-blue-100"><Icon name="BarChart2" className="text-blue-600" /><h3 className="text-xs font-black text-blue-700 uppercase tracking-widest">OEE Monthly Result</h3></div>
+                                <div className="flex items-center gap-4 mb-8 bg-blue-50/80 px-5 py-3 rounded-2xl w-fit border border-blue-100"><Icon name="BarChart2" className="text-blue-600" /><h3 className="text-xs font-black text-blue-700 uppercase tracking-widest">OEE Monthly Performance</h3></div>
                                 <div className="h-[400px]">
-                                    {annualChartData.length > 0 && (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={annualChartData} margin={{ top: 30, right: 30, left: 0, bottom: 0 }}>
-                                                <defs>
-                                                    <linearGradient id="barGreen3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" /><stop offset="100%" stopColor="#047857" /></linearGradient>
-                                                    <linearGradient id="barRed3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" /><stop offset="100%" stopColor="#991b1b" /></linearGradient>
-                                                    <linearGradient id="areaOutput" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.25} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
-                                                <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} />
-                                                <YAxis yAxisId="left" hide domain={[0, 110]} />
-                                                <YAxis yAxisId="right" hide />
-                                                <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} />
-                                                <ReferenceLine yAxisId="left" y={targets.oee} stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} />
-                                                <Area yAxisId="right" type="monotone" dataKey="output" fill="url(#areaOutput)" stroke="none" />
-                                                <Bar yAxisId="left" dataKey="oee" radius={[12, 12, 0, 0]} maxBarSize={45}>
-                                                    {annualChartData.map((e, i) => <Cell key={i} fill={e.oee >= targets.oee ? 'url(#barGreen3D)' : 'url(#barRed3D)'} opacity={i === yearlyOeeIndex ? 1 : 0.4} />)}
-                                                    <LabelList dataKey="oee" content={(p) => renderDynamicBarLabel(p, yearlyOeeIndex, 'oee', annualChartData)} />
-                                                </Bar>
-                                                <Line yAxisId="right" type="monotone" dataKey="output" stroke="#f59e0b" strokeWidth={4} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    )}
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <ComposedChart data={annualChartData} margin={{ top: 30, right: 30, left: 0, bottom: 0 }}>
+                                            <defs>
+                                                <linearGradient id="barGreen3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" /><stop offset="100%" stopColor="#047857" /></linearGradient>
+                                                <linearGradient id="barRed3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" /><stop offset="100%" stopColor="#991b1b" /></linearGradient>
+                                                <linearGradient id="areaOutput" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.25} /><stop offset="100%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
+                                            <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} />
+                                            <YAxis yAxisId="left" hide domain={[0, 110]} />
+                                            <YAxis yAxisId="right" hide />
+                                            <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }} />
+                                            <ReferenceLine yAxisId="left" y={targets.oee} stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} />
+                                            <Area yAxisId="right" type="monotone" dataKey="output" fill="url(#areaOutput)" stroke="none" />
+                                            <Bar yAxisId="left" dataKey="oee" radius={[12, 12, 0, 0]} maxBarSize={45}>
+                                                {annualChartData.map((e, i) => <Cell key={i} fill={e.oee >= targets.oee ? 'url(#barGreen3D)' : 'url(#barRed3D)'} opacity={i === yearlyOeeIndex ? 1 : 0.4} />)}
+                                                <LabelList dataKey="oee" content={(p) => renderDynamicBarLabel(p, yearlyOeeIndex, 'oee', annualChartData)} />
+                                            </Bar>
+                                            <Line yAxisId="right" type="monotone" dataKey="output" stroke="#f59e0b" strokeWidth={4} dot={false} />
+                                        </ComposedChart>
+                                    </ResponsiveContainer>
                                 </div>
                             </div>
 
-                            {/* NG Chart */}
                             <div className="glass-card p-8 rounded-[3rem] animate-fade-in-up">
                                 {validNgIndices.length > 0 && (
                                     <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 z-20 overflow-hidden">
@@ -453,32 +437,29 @@
                                 )}
                                 <div className="flex items-center gap-4 mb-8 bg-purple-50/80 px-5 py-3 rounded-2xl w-fit border border-purple-100"><Icon name="ActivitySquare" className="text-purple-600" /><h3 className="text-xs font-black text-purple-700 uppercase tracking-widest">NG Quantity Monitoring</h3></div>
                                 <div className="h-[400px]">
-                                    {annualChartData.length > 0 && (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={annualChartData} margin={{ top: 30, right: 30, left: 0, bottom: 0 }}>
-                                                <defs>
-                                                    <linearGradient id="barNg3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d946ef" /><stop offset="100%" stopColor="#701a75" /></linearGradient>
-                                                    <linearGradient id="areaNgRate" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ec4899" stopOpacity={0.2} /><stop offset="100%" stopColor="#ec4899" stopOpacity={0} /></linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
-                                                <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} />
-                                                <YAxis yAxisId="left" hide />
-                                                <YAxis yAxisId="right" hide domain={[0, d => Math.max(d, targets.ng) * 1.5]} />
-                                                <ReferenceLine yAxisId="right" y={targets.ng} stroke="#ef4444" strokeDasharray="10 5" strokeWidth={2} />
-                                                <Area yAxisId="right" type="monotone" dataKey="ngRate" fill="url(#areaNgRate)" stroke="none" />
-                                                <Bar yAxisId="left" dataKey="ngQty" radius={[12, 12, 0, 0]} maxBarSize={45}>
-                                                    {annualChartData.map((e, i) => <Cell key={i} fill="url(#barNg3D)" opacity={i === yearlyNgIndex ? 1 : 0.4} />)}
-                                                    <LabelList dataKey="ngQty" content={(p) => renderDynamicBarLabel(p, yearlyNgIndex, 'ngQty', annualChartData)} />
-                                                </Bar>
-                                                <Line yAxisId="right" type="monotone" dataKey="ngRate" stroke="#ec4899" strokeWidth={4} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    )}
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <ComposedChart data={annualChartData} margin={{ top: 30, right: 30, left: 0, bottom: 0 }}>
+                                            <defs>
+                                                <linearGradient id="barNg3D" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d946ef" /><stop offset="100%" stopColor="#701a75" /></linearGradient>
+                                                <linearGradient id="areaNgRate" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ec4899" stopOpacity={0.2} /><stop offset="100%" stopColor="#ec4899" stopOpacity={0} /></linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
+                                            <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} />
+                                            <YAxis yAxisId="left" hide />
+                                            <YAxis yAxisId="right" hide domain={[0, d => Math.max(d, targets.ng) * 1.5]} />
+                                            <ReferenceLine yAxisId="right" y={targets.ng} stroke="#ef4444" strokeDasharray="10 5" strokeWidth={2} />
+                                            <Area yAxisId="right" type="monotone" dataKey="ngRate" fill="url(#areaNgRate)" stroke="none" />
+                                            <Bar yAxisId="left" dataKey="ngQty" radius={[12, 12, 0, 0]} maxBarSize={45}>
+                                                {annualChartData.map((e, i) => <Cell key={i} fill="url(#barNg3D)" opacity={i === yearlyNgIndex ? 1 : 0.4} />)}
+                                                <LabelList dataKey="ngQty" content={(p) => renderDynamicBarLabel(p, yearlyNgIndex, 'ngQty', annualChartData)} />
+                                            </Bar>
+                                            <Line yAxisId="right" type="monotone" dataKey="ngRate" stroke="#ec4899" strokeWidth={4} dot={false} />
+                                        </ComposedChart>
+                                    </ResponsiveContainer>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Pie Chart */}
                         <div className="flex justify-center">
                             <div className="w-full max-w-[1000px] bg-slate-900 border border-slate-700 shadow-[0_30px_60px_rgba(0,0,0,0.5)] p-12 rounded-[4rem] relative overflow-hidden animate-fade-in-up">
                                 <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/50 z-20 overflow-hidden"><div key={pieAutoPlayIndex} className="h-full bg-gradient-to-r from-rose-400 to-orange-400 animate-scan-progress-pie"></div></div>
@@ -496,17 +477,16 @@
                                                 <Tooltip formatter={(v, n) => [formatNumber(v) + ' Pcs.', n]} contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', color: '#fff' }} />
                                             </PieChart>
                                         </ResponsiveContainer>
-                                    ) : <div className="flex flex-col items-center justify-center h-full text-slate-500 font-black uppercase tracking-[0.2em] italic opacity-50"><Icon name="Inbox" size={48} className="mb-4" />No Rejection Data Available</div>}
+                                    ) : <div className="flex flex-col items-center justify-center h-full text-slate-500 font-black uppercase tracking-[0.2em] italic opacity-50"><Icon name="Inbox" size={48} className="mb-4" />No Data</div>}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Cloud Save & Selector */}
                         <div className="glass-card p-8 rounded-[3rem] animate-fade-in-up">
                             <div className="flex items-center justify-between mb-8">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-slate-100 rounded-xl text-slate-500"><Icon name="SlidersHorizontal" size={20} /></div>
-                                    <h2 className="text-lg font-black text-slate-800 uppercase italic">Selection & Cloud Management</h2>
+                                    <h2 className="text-lg font-black text-slate-800 uppercase italic">Month Selection & Cloud Save</h2>
                                 </div>
                                 <button onClick={() => saveToCloud()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-2xl font-black text-xs transition-all shadow-lg flex items-center gap-2 active:scale-95">
                                     <Icon name="CloudUpload" size={18} /> SAVE CURRENT DATA TO CLOUD
@@ -567,7 +547,7 @@
                         </div>
                     </div>
 
-                    <div className="mt-12 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] italic"><Icon name="Zap" size={14} className="inline mr-2 text-amber-500 animate-pulse" /> EN Plating Solero Division • Advanced Cloud Dashboard</div>
+                    <div className="mt-12 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] italic"><Icon name="Zap" size={14} className="inline mr-2 text-amber-500 animate-pulse" /> EN Plating Division • Standalone GitHub App</div>
                 </div>
             );
         };
