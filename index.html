@@ -153,30 +153,54 @@
                 return () => clearInterval(timer);
             }, []);
 
-            // จัดการระบบจำลองโหมดเต็มจอ (Simulated Fullscreen)
+            // จัดการระบบ Fullscreen (Native + CSS Fallback)
             useEffect(() => {
+                const handleFsChange = () => {
+                    // ตรวจสอบว่าเบราว์เซอร์อยู่ในโหมด Fullscreen จริงหรือไม่
+                    const isNativeFs = !!document.fullscreenElement;
+                    setIsFullscreen(isNativeFs);
+                };
+
                 const handleKeyDown = (e) => {
                     if (e.key === 'Escape' && isFullscreen) {
-                        setIsFullscreen(false);
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen();
+                        } else {
+                            setIsFullscreen(false);
+                        }
                     }
                 };
                 
-                // เมื่อเข้าโหมดเต็มจอ ให้ปิดการ Scroll ของ Body หลัก
+                document.addEventListener('fullscreenchange', handleFsChange);
+                window.addEventListener('keydown', handleKeyDown);
+
+                // ปรับแต่งการ Scroll เมื่ออยู่ในโหมดเต็มจอ
                 if (isFullscreen) {
                     document.body.style.overflow = 'hidden';
                 } else {
                     document.body.style.overflow = 'auto';
                 }
 
-                window.addEventListener('keydown', handleKeyDown);
                 return () => {
+                    document.removeEventListener('fullscreenchange', handleFsChange);
                     window.removeEventListener('keydown', handleKeyDown);
                     document.body.style.overflow = 'auto';
                 };
             }, [isFullscreen]);
 
             const toggleFullscreen = () => {
-                setIsFullscreen(!isFullscreen);
+                if (!document.fullscreenElement) {
+                    // พยายามเข้าโหมดเต็มจอแบบ Native
+                    document.documentElement.requestFullscreen().catch(err => {
+                        // ถ้าติดเรื่อง Permissions (เช่น ใน Iframe) ให้ใช้ระบบจำลอง (CSS) แทน
+                        console.warn("Fullscreen blocked by policy, using simulation.");
+                        setIsFullscreen(!isFullscreen);
+                    });
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    }
+                }
             };
 
             const currentData = useMemo(() => fullYearData[selectedMonth], [fullYearData, selectedMonth]);
@@ -340,7 +364,7 @@
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-4 relative z-10 mt-4 md:mt-0">
-                            {/* ปุ่มเต็มจอที่แก้ไขแล้ว */}
+                            {/* ปุ่มเต็มจอที่รองรับ GitHub Pages */}
                             <button 
                                 onClick={toggleFullscreen} 
                                 className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 px-6 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-sm"
@@ -529,7 +553,7 @@
                             )}
                         </div>
                     )}
-                    <div className="mt-8 text-center"><div className="inline-flex items-center gap-3 px-8 py-3 bg-white/60 backdrop-blur-md rounded-full text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] border border-white shadow-sm italic"><Icon name="Zap" size={14} className="text-amber-500 animate-pulse" /> EN Plating Solero Division • Working Days Monitoring Active</div></div>
+                    <div className="mt-8 text-center"><div className="inline-flex items-center gap-3 px-8 py-3 bg-white/60 backdrop-blur-md rounded-full text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] border border-white shadow-sm italic"><Icon name="Zap" size={14} className="text-amber-500 animate-pulse" /> EN Plating Solero Division • Fullscreen Mode Ready for GitHub</div></div>
                 </div>
             );
         };
