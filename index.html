@@ -122,6 +122,7 @@
             const [message, setMessage] = useState(null);
             const [overallNgRate, setOverallNgRate] = useState(0);
             const [overallOee, setOverallOee] = useState(0);
+            const [overallOutput, setOverallOutput] = useState(0); // ช่องใหม่ที่เพิ่ม
             const [showInputPanel, setShowInputPanel] = useState(true);
             const [isFullscreen, setIsFullscreen] = useState(false);
             const [autoPlayIndex, setAutoPlayIndex] = useState(0);
@@ -139,6 +140,7 @@
                         if (parsed.targets) setTargets(parsed.targets);
                         if (parsed.overallNgRate !== undefined) setOverallNgRate(parsed.overallNgRate);
                         if (parsed.overallOee !== undefined) setOverallOee(parsed.overallOee);
+                        if (parsed.overallOutput !== undefined) setOverallOutput(parsed.overallOutput);
                     }
                 } catch (e) { console.error("Failed to load data", e); }
             }, []);
@@ -153,34 +155,19 @@
                 return () => clearInterval(timer);
             }, []);
 
-            // จัดการระบบ Fullscreen (Native + CSS Fallback)
             useEffect(() => {
                 const handleFsChange = () => {
-                    // ตรวจสอบว่าเบราว์เซอร์อยู่ในโหมด Fullscreen จริงหรือไม่
                     const isNativeFs = !!document.fullscreenElement;
                     setIsFullscreen(isNativeFs);
                 };
-
                 const handleKeyDown = (e) => {
                     if (e.key === 'Escape' && isFullscreen) {
-                        if (document.fullscreenElement) {
-                            document.exitFullscreen();
-                        } else {
-                            setIsFullscreen(false);
-                        }
+                        if (document.fullscreenElement) { document.exitFullscreen(); } else { setIsFullscreen(false); }
                     }
-                };
-                
+                };                
                 document.addEventListener('fullscreenchange', handleFsChange);
                 window.addEventListener('keydown', handleKeyDown);
-
-                // ปรับแต่งการ Scroll เมื่ออยู่ในโหมดเต็มจอ
-                if (isFullscreen) {
-                    document.body.style.overflow = 'hidden';
-                } else {
-                    document.body.style.overflow = 'auto';
-                }
-
+                if (isFullscreen) { document.body.style.overflow = 'hidden'; } else { document.body.style.overflow = 'auto'; }
                 return () => {
                     document.removeEventListener('fullscreenchange', handleFsChange);
                     window.removeEventListener('keydown', handleKeyDown);
@@ -190,16 +177,12 @@
 
             const toggleFullscreen = () => {
                 if (!document.fullscreenElement) {
-                    // พยายามเข้าโหมดเต็มจอแบบ Native
                     document.documentElement.requestFullscreen().catch(err => {
-                        // ถ้าติดเรื่อง Permissions (เช่น ใน Iframe) ให้ใช้ระบบจำลอง (CSS) แทน
-                        console.warn("Fullscreen blocked by policy, using simulation.");
+                        console.warn("Fullscreen blocked, using fallback.");
                         setIsFullscreen(!isFullscreen);
                     });
                 } else {
-                    if (document.exitFullscreen) {
-                        document.exitFullscreen();
-                    }
+                    if (document.exitFullscreen) document.exitFullscreen();
                 }
             };
 
@@ -261,10 +244,8 @@
                             };
                             months.forEach((m, idx) => {
                                 const mAbbr = monthAbbr[idx];
-                                let oeeRow = findRowByMonthName(summaryWs, 'A', mAbbr, 2, 20);
-                                if (oeeRow === -1) oeeRow = findRowByMonthName(summaryWs, 'B', mAbbr, 2, 20);
+                                let oeeRow = findRowByMonthName(summaryWs, 'A', mAbbr, 2, 20) || findRowByMonthName(summaryWs, 'B', mAbbr, 2, 20);
                                 if (oeeRow === -1) oeeRow = 3 + idx;
-                                
                                 let ngRow = findRowByMonthName(summaryWs, 'A', mAbbr, 30, 60);
                                 if (ngRow === -1) ngRow = 34 + idx;
                                 
@@ -282,19 +263,17 @@
                                 newYearData[m].monthlySummary.ngBreakdown = ngTypesConfig.map(type => ({ name: type.name, value: summaryWs[`${type.col}${ngRow}`]?.v || 0 }));
                             });
 
+                            // ดึงค่า NG Overall (F51)
                             const ngOverallCell = summaryWs['F51'];
-                            if (ngOverallCell) {
-                                let ngOverallVal = ngOverallCell.v || 0;
-                                if (ngOverallVal > 0 && ngOverallVal <= 1) {
-                                    ngOverallVal = ngOverallVal * 100;
-                                }
-                                setOverallNgRate(Math.round(ngOverallVal * 100) / 100);
-                            } else {
-                                setOverallNgRate(0);
-                            }
+                            if (ngOverallCell) setOverallNgRate(Math.round((ngOverallCell.v <= 1 ? ngOverallCell.v * 100 : ngOverallCell.v) * 100) / 100);
 
+                            // ดึงค่า OEE Overall (C15)
                             const oeeOverallVal = summaryWs['C15']?.v || 0;
                             setOverallOee(Math.round((oeeOverallVal <= 1 ? oeeOverallVal * 100 : oeeOverallVal) * 100) / 100);
+
+                            // ดึงค่า Overall Output (B51) - เพิ่มใหม่ตามที่ต้องการ
+                            const outputOverallCell = summaryWs['B51'];
+                            if (outputOverallCell) setOverallOutput(outputOverallCell.v || 0);
                         }
                         setFullYearData(newYearData);
                         setSelectedMonth(getLatestMonthWithData(newYearData));
@@ -306,7 +285,7 @@
             };
 
             const handleSaveData = () => {
-                const dataToSave = { fullYearData, targets, overallNgRate, overallOee };
+                const dataToSave = { fullYearData, targets, overallNgRate, overallOee, overallOutput };
                 try { localStorage.setItem('oeeDashboardData', JSON.stringify(dataToSave)); setMessage({ type: 'success', text: 'บันทึกข้อมูลเรียบร้อยแล้ว' }); }
                 catch (e) { setMessage({ type: 'error', text: 'ไม่สามารถบันทึกได้' }); }
                 setTimeout(() => setMessage(null), 3000);
@@ -351,7 +330,7 @@
 
             return (
                 <div 
-                    className={isFullscreen ? "fixed inset-0 z-[9999] w-full h-[100dvh] overflow-y-auto bg-[#f1f5f9] p-4 md:p-8 pb-12" : "max-w-[90rem] mx-auto p-4 md:p-8 pb-12 relative"} 
+                    className={isFullscreen ? "fixed inset-0 z-[9999] w-full h-[100dvh] overflow-y-auto bg-[#f1f5f9] p-4 md:p-8 pb-12" : "max-w-[95rem] mx-auto p-4 md:p-8 pb-12 relative"} 
                     style={isFullscreen ? { backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '32px 32px' } : {}}
                 >
                     {/* --- HEADER --- */}
@@ -364,15 +343,7 @@
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-4 relative z-10 mt-4 md:mt-0">
-                            {/* ปุ่มเต็มจอที่รองรับ GitHub Pages */}
-                            <button 
-                                onClick={toggleFullscreen} 
-                                className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 px-6 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-sm"
-                            >
-                                <Icon name={isFullscreen ? "Minimize" : "Maximize"} size={20} className="text-blue-500" /> 
-                                {isFullscreen ? "ย่อหน้าจอ (ESC)" : "เต็มหน้าจอ (FULLSCREEN)"}
-                            </button>
-                            
+                            <button onClick={toggleFullscreen} className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 px-6 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-sm"><Icon name={isFullscreen ? "Minimize" : "Maximize"} size={20} className="text-blue-500" /> {isFullscreen ? "ย่อหน้าจอ (ESC)" : "เต็มหน้าจอ (FULLSCREEN)"}</button>
                             {!isFullscreen && (
                                 <>
                                     <button onClick={handleSaveData} className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-emerald-400 text-slate-700 hover:text-emerald-600 px-6 py-4 rounded-2xl font-black text-xs transition-all duration-300 shadow-sm"><Icon name="Save" size={20} className="text-emerald-500" /> SAVE DATA</button>
@@ -385,14 +356,13 @@
 
                     {message && <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[10000] px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce ${message.type === 'success' ? 'bg-slate-900 text-emerald-400 border border-emerald-900/50' : 'bg-red-600 text-white'}`}><Icon name={message.type === 'success' ? "CheckCircle2" : "AlertCircle"} size={20} /><span className="font-black text-sm uppercase tracking-widest">{message.text}</span></div>}
 
-                    {/* --- SUMMARY STATS --- */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-5 mb-10">
+                    {/* --- SUMMARY STATS (8 Columns) --- */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-5 mb-10">
                         <div className="glass-card p-5 border-t-4 border-t-indigo-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Clock" size={16} className="text-indigo-500" /> วันทำงาน/{selectedMonth}</div>
                             <div className="text-4xl font-black text-indigo-600 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.workingDays} formatter={formatNumber} /></div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Days</span><span className="text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-md">Col F</span></div>
                         </div>
-
                         <div className="glass-card p-5 border-t-4 border-t-blue-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="CalendarDays" size={16} className="text-blue-500" /> OEE เดือน{selectedMonth}</div>
                             <div className={`text-4xl font-black tracking-tighter ${currentData.monthlySummary.oee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={currentData.monthlySummary.oee} formatter={toFixed2} />%</div>
@@ -403,18 +373,24 @@
                             <div className={`text-4xl font-black tracking-tighter ${overallOee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={overallOee} formatter={toFixed2} />%</div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">C15</span></div>
                         </div>
+                        {/* ช่องใหม่ที่เพิ่ม: Over All Output (B51) */}
+                        <div className="glass-card p-5 border-t-4 border-t-cyan-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="BarChart3" size={16} className="text-cyan-500" /> Over All Out Put</div>
+                            <div className="text-4xl font-black text-cyan-600 tracking-tighter"><AnimatedNumber value={overallOutput} formatter={formatNumber} /></div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Total All</span><span className="text-cyan-600 bg-cyan-100 px-1.5 py-0.5 rounded-md">B51</span></div>
+                        </div>
                         <div className="glass-card p-5 border-t-4 border-t-amber-500">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Boxes" size={16} className="text-amber-500" /> Total Output</div>
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Boxes" size={16} className="text-amber-500" /> Total Output {selectedMonth}</div>
                             <div className="text-4xl font-black text-amber-500 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.output} formatter={formatNumber} /></div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Total PCS</span><span className="text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-md">Summary</span></div>
                         </div>
                         <div className="glass-card p-5 border-t-4 border-t-pink-500">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="TrendingDown" size={16} className="text-pink-500" /> Total % NG</div>
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="TrendingDown" size={16} className="text-pink-500" /> Total % NG {selectedMonth}</div>
                             <div className={`text-4xl font-black tracking-tighter ${currentData.monthlySummary.ngRate <= targets.ng ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={currentData.monthlySummary.ngRate} formatter={toFixed2} />%</div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Limit: {targets.ng}%</span><span className="text-pink-600 bg-pink-100 px-1.5 py-0.5 rounded-md">Yield Rate</span></div>
                         </div>
                         <div className="glass-card p-5 border-t-4 border-t-red-600">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="AlertTriangle" size={16} className="text-red-600" /> Total NG Qty</div>
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="AlertTriangle" size={16} className="text-red-600" /> Total NG Qty {selectedMonth}</div>
                             <div className="text-4xl font-black text-red-600 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.ngQty} formatter={formatNumber} /></div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Reject PCS</span><span className="text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md">Summary</span></div>
                         </div>
@@ -505,7 +481,8 @@
                                                 </Pie>
                                                 <Tooltip formatter={(value, name) => [formatNumber(value) + ' Pcs.', name]} contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', color: '#fff' }} />
                                                 <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', paddingTop: '30px' }} />
-                                            </PieChart>                                        </ResponsiveContainer>
+                                            </PieChart>
+                                        </ResponsiveContainer>
                                     ) : <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm font-bold uppercase tracking-widest italic opacity-50"><Icon name="Inbox" size={40} />No Rejection Data for {selectedMonth}</div>}
                                 </div>
                             </div>
@@ -553,7 +530,8 @@
                             )}
                         </div>
                     )}
-                    <div className="mt-8 text-center"><div className="inline-flex items-center gap-3 px-8 py-3 bg-white/60 backdrop-blur-md rounded-full text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] border border-white shadow-sm italic"><Icon name="Zap" size={14} className="text-amber-500 animate-pulse" /> EN Plating Solero Division • Fullscreen Mode Ready for GitHub</div></div>
+
+                    <div className="mt-8 text-center"><div className="inline-flex items-center gap-3 px-8 py-3 bg-white/60 backdrop-blur-md rounded-full text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] border border-white shadow-sm italic"><Icon name="Zap" size={14} className="text-amber-500 animate-pulse" /> EN Plating Solero Division • GitHub Dashboard Final Update</div></div>
                 </div>
             );
         };
