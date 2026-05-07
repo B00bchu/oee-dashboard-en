@@ -122,7 +122,7 @@
             const [message, setMessage] = useState(null);
             const [overallNgRate, setOverallNgRate] = useState(0);
             const [overallOee, setOverallOee] = useState(0);
-            const [overallOutput, setOverallOutput] = useState(0); // ช่องใหม่ที่เพิ่ม
+            const [overallOutput, setOverallOutput] = useState(0);
             const [showInputPanel, setShowInputPanel] = useState(true);
             const [isFullscreen, setIsFullscreen] = useState(false);
             const [autoPlayIndex, setAutoPlayIndex] = useState(0);
@@ -133,10 +133,7 @@
                     const savedData = localStorage.getItem('oeeDashboardData');
                     if (savedData) {
                         const parsed = JSON.parse(savedData);
-                        if (parsed.fullYearData) {
-                            setFullYearData(parsed.fullYearData);
-                            setSelectedMonth(getLatestMonthWithData(parsed.fullYearData));
-                        }
+                        if (parsed.fullYearData) setFullYearData(parsed.fullYearData);
                         if (parsed.targets) setTargets(parsed.targets);
                         if (parsed.overallNgRate !== undefined) setOverallNgRate(parsed.overallNgRate);
                         if (parsed.overallOee !== undefined) setOverallOee(parsed.overallOee);
@@ -156,31 +153,14 @@
             }, []);
 
             useEffect(() => {
-                const handleFsChange = () => {
-                    const isNativeFs = !!document.fullscreenElement;
-                    setIsFullscreen(isNativeFs);
-                };
-                const handleKeyDown = (e) => {
-                    if (e.key === 'Escape' && isFullscreen) {
-                        if (document.fullscreenElement) { document.exitFullscreen(); } else { setIsFullscreen(false); }
-                    }
-                };                
+                const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
                 document.addEventListener('fullscreenchange', handleFsChange);
-                window.addEventListener('keydown', handleKeyDown);
-                if (isFullscreen) { document.body.style.overflow = 'hidden'; } else { document.body.style.overflow = 'auto'; }
-                return () => {
-                    document.removeEventListener('fullscreenchange', handleFsChange);
-                    window.removeEventListener('keydown', handleKeyDown);
-                    document.body.style.overflow = 'auto';
-                };
-            }, [isFullscreen]);
+                return () => document.removeEventListener('fullscreenchange', handleFsChange);
+            }, []);
 
             const toggleFullscreen = () => {
                 if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().catch(err => {
-                        console.warn("Fullscreen blocked, using fallback.");
-                        setIsFullscreen(!isFullscreen);
-                    });
+                    document.documentElement.requestFullscreen().catch(() => setIsFullscreen(!isFullscreen));
                 } else {
                     if (document.exitFullscreen) document.exitFullscreen();
                 }
@@ -209,9 +189,7 @@
             const yearlyOeeData = annualChartData.filter(d => !d.isTotal);
             const scannableYearlyIndices = yearlyOeeData.map((d, i) => (d.output > 0 || d.oee > 0) ? i : -1).filter(i => i !== -1);
             const yearlyOeeIndex = scannableYearlyIndices.length > 0 ? scannableYearlyIndices[autoPlayIndex % scannableYearlyIndices.length] : 0;
-
-            const scannableNgIndices = annualChartData.map((d, i) => (d.output > 0 || d.ngQty > 0 || d.isTotal) ? i : -1).filter(i => i !== -1);
-            const yearlyNgIndex = scannableNgIndices.length > 0 ? scannableNgIndices[autoPlayIndex % scannableNgIndices.length] : 0;
+            const yearlyNgIndex = annualChartData.length > 0 ? autoPlayIndex % annualChartData.length : 0;
 
             const pieData = currentData.monthlySummary.ngBreakdown ? currentData.monthlySummary.ngBreakdown.filter(d => d.value > 0) : [];
             const pieIndex = pieData.length > 0 ? pieAutoPlayIndex % pieData.length : 0;
@@ -263,15 +241,12 @@
                                 newYearData[m].monthlySummary.ngBreakdown = ngTypesConfig.map(type => ({ name: type.name, value: summaryWs[`${type.col}${ngRow}`]?.v || 0 }));
                             });
 
-                            // ดึงค่า NG Overall (F51)
                             const ngOverallCell = summaryWs['F51'];
                             if (ngOverallCell) setOverallNgRate(Math.round((ngOverallCell.v <= 1 ? ngOverallCell.v * 100 : ngOverallCell.v) * 100) / 100);
 
-                            // ดึงค่า OEE Overall (C15)
                             const oeeOverallVal = summaryWs['C15']?.v || 0;
                             setOverallOee(Math.round((oeeOverallVal <= 1 ? oeeOverallVal * 100 : oeeOverallVal) * 100) / 100);
 
-                            // ดึงค่า Overall Output (B51) - เพิ่มใหม่ตามที่ต้องการ
                             const outputOverallCell = summaryWs['B51'];
                             if (outputOverallCell) setOverallOutput(outputOverallCell.v || 0);
                         }
@@ -286,8 +261,10 @@
 
             const handleSaveData = () => {
                 const dataToSave = { fullYearData, targets, overallNgRate, overallOee, overallOutput };
-                try { localStorage.setItem('oeeDashboardData', JSON.stringify(dataToSave)); setMessage({ type: 'success', text: 'บันทึกข้อมูลเรียบร้อยแล้ว' }); }
-                catch (e) { setMessage({ type: 'error', text: 'ไม่สามารถบันทึกได้' }); }
+                try { 
+                    localStorage.setItem('oeeDashboardData', JSON.stringify(dataToSave)); 
+                    setMessage({ type: 'success', text: 'บันทึกข้อมูลเรียบร้อยแล้ว' }); 
+                } catch (e) { setMessage({ type: 'error', text: 'ไม่สามารถบันทึกได้' }); }
                 setTimeout(() => setMessage(null), 3000);
             };
 
@@ -356,44 +333,58 @@
 
                     {message && <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[10000] px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce ${message.type === 'success' ? 'bg-slate-900 text-emerald-400 border border-emerald-900/50' : 'bg-red-600 text-white'}`}><Icon name={message.type === 'success' ? "CheckCircle2" : "AlertCircle"} size={20} /><span className="font-black text-sm uppercase tracking-widest">{message.text}</span></div>}
 
-                    {/* --- SUMMARY STATS (8 Columns) --- */}
+                    {/* --- SUMMARY STATS (Sorted: Monthly first, Overall last) --- */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-5 mb-10">
+                        {/* 1. Monthly: Working Days */}
                         <div className="glass-card p-5 border-t-4 border-t-indigo-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Clock" size={16} className="text-indigo-500" /> วันทำงาน/{selectedMonth}</div>
                             <div className="text-4xl font-black text-indigo-600 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.workingDays} formatter={formatNumber} /></div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Days</span><span className="text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-md">Col F</span></div>
                         </div>
+
+                        {/* 2. Monthly: OEE */}
                         <div className="glass-card p-5 border-t-4 border-t-blue-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="CalendarDays" size={16} className="text-blue-500" /> OEE เดือน{selectedMonth}</div>
                             <div className={`text-4xl font-black tracking-tighter ${currentData.monthlySummary.oee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={currentData.monthlySummary.oee} formatter={toFixed2} />%</div>
-                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-md">{selectedMonth}</span></div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-md">Result</span></div>
                         </div>
-                        <div className="glass-card p-5 border-t-4 border-t-emerald-500">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Globe" size={16} className="text-emerald-500" /> OEE Overall</div>
-                            <div className={`text-4xl font-black tracking-tighter ${overallOee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={overallOee} formatter={toFixed2} />%</div>
-                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">C15</span></div>
-                        </div>
-                        {/* ช่องใหม่ที่เพิ่ม: Over All Output (B51) */}
-                        <div className="glass-card p-5 border-t-4 border-t-cyan-500">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="BarChart3" size={16} className="text-cyan-500" /> Over All Out Put</div>
-                            <div className="text-4xl font-black text-cyan-600 tracking-tighter"><AnimatedNumber value={overallOutput} formatter={formatNumber} /></div>
-                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Total All</span><span className="text-cyan-600 bg-cyan-100 px-1.5 py-0.5 rounded-md">B51</span></div>
-                        </div>
+
+                        {/* 3. Monthly: Total Output */}
                         <div className="glass-card p-5 border-t-4 border-t-amber-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Boxes" size={16} className="text-amber-500" /> Total Output {selectedMonth}</div>
                             <div className="text-4xl font-black text-amber-500 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.output} formatter={formatNumber} /></div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Total PCS</span><span className="text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-md">Summary</span></div>
                         </div>
+
+                        {/* 4. Monthly: Total % NG */}
                         <div className="glass-card p-5 border-t-4 border-t-pink-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="TrendingDown" size={16} className="text-pink-500" /> Total % NG {selectedMonth}</div>
                             <div className={`text-4xl font-black tracking-tighter ${currentData.monthlySummary.ngRate <= targets.ng ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={currentData.monthlySummary.ngRate} formatter={toFixed2} />%</div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Limit: {targets.ng}%</span><span className="text-pink-600 bg-pink-100 px-1.5 py-0.5 rounded-md">Yield Rate</span></div>
                         </div>
+
+                        {/* 5. Monthly: Total NG Qty */}
                         <div className="glass-card p-5 border-t-4 border-t-red-600">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="AlertTriangle" size={16} className="text-red-600" /> Total NG Qty {selectedMonth}</div>
                             <div className="text-4xl font-black text-red-600 tracking-tighter"><AnimatedNumber value={currentData.monthlySummary.ngQty} formatter={formatNumber} /></div>
                             <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Reject PCS</span><span className="text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md">Summary</span></div>
                         </div>
+
+                        {/* 6. Overall: OEE Overall */}
+                        <div className="glass-card p-5 border-t-4 border-t-emerald-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Globe" size={16} className="text-emerald-500" /> OEE Overall</div>
+                            <div className={`text-4xl font-black tracking-tighter ${overallOee >= targets.oee ? 'text-emerald-500' : 'text-red-500'}`}><AnimatedNumber value={overallOee} formatter={toFixed2} />%</div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Target: {targets.oee}%</span><span className="text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">C15</span></div>
+                        </div>
+
+                        {/* 7. Overall: Over All Output */}
+                        <div className="glass-card p-5 border-t-4 border-t-cyan-500">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="BarChart3" size={16} className="text-cyan-500" /> Over All Out Put</div>
+                            <div className="text-4xl font-black text-cyan-600 tracking-tighter"><AnimatedNumber value={overallOutput} formatter={formatNumber} /></div>
+                            <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 bg-slate-100/50 px-2 py-1.5 rounded-xl border border-white/50"><span>Total All</span><span className="text-cyan-600 bg-cyan-100 px-1.5 py-0.5 rounded-md">B51</span></div>
+                        </div>
+
+                        {/* 8. Overall: % NG Overall */}
                         <div className="glass-card p-5 border-t-4 border-t-orange-500">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2"><Icon name="Activity" size={16} className="text-orange-500" /> % NG Overall</div>
                             <div className={`text-4xl font-black tracking-tighter ${overallNgRate <= targets.ng ? 'text-emerald-500' : 'text-red-600'}`}><AnimatedNumber value={overallNgRate} formatter={toFixed2} />%</div>
@@ -404,7 +395,7 @@
                     {/* --- CHART ZONE --- */}
                     <div className="bg-white/40 backdrop-blur-3xl p-6 md:p-8 rounded-[3rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 mb-10 space-y-10">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* 1. Oee Chart */}
+                            {/* OEE Chart */}
                             <div className="glass-card p-8 rounded-[3rem] relative animate-fade-in-up">
                                 <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 rounded-t-[3rem] overflow-hidden z-20"><div key={autoPlayIndex} className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 animate-scan-progress"></div></div>
                                 <div className="flex items-center gap-4 mb-8 bg-blue-50/80 backdrop-blur-xl px-5 py-3 rounded-2xl w-fit border border-blue-100 shadow-sm relative z-10"><div className="p-2 bg-blue-600 text-white rounded-xl shadow-lg"><Icon name="BarChart2" size={20} /></div><h3 className="text-sm font-black text-blue-700 uppercase tracking-widest">OEE Result & Output Volume</h3></div>
@@ -418,7 +409,8 @@
                                             </defs>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" strokeOpacity={0.4} />
                                             <XAxis dataKey="shortName" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#475569' }} dy={10} />
-                                            <YAxis yAxisId="left" domain={[0, 110]} hide /><YAxis yAxisId="right" orientation="right" hide />
+                                            <YAxis yAxisId="left" domain={[0, 110]} hide />
+                                            <YAxis yAxisId="right" orientation="right" hide />
                                             <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', borderRadius: '20px', border: '1px solid #e2e8f0' }} />
                                             <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: '900', paddingBottom: '20px' }} />
                                             <ReferenceLine yAxisId="left" y={targets.oee} stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} label={{ position: 'top', value: `Target OEE ${targets.oee}%`, fill: '#f43f5e', fontSize: 10, fontWeight: 900 }} />
@@ -433,7 +425,7 @@
                                 </div>
                             </div>
 
-                            {/* 2. NG Chart */}
+                            {/* NG Chart */}
                             <div className="glass-card p-8 rounded-[3rem] relative animate-fade-in-up">
                                 <div className="absolute top-0 left-0 h-[4px] w-full bg-slate-800/10 rounded-t-[3rem] overflow-hidden z-20"><div key={autoPlayIndex} className="h-full bg-gradient-to-r from-purple-400 to-pink-400 animate-scan-progress"></div></div>
                                 <div className="flex items-center gap-4 mb-8 bg-purple-50/80 backdrop-blur-xl px-5 py-3 rounded-2xl w-fit border border-purple-100 shadow-sm relative z-10"><div className="p-2 bg-purple-600 text-white rounded-xl shadow-lg"><Icon name="ActivitySquare" size={20} /></div><h3 className="text-sm font-black text-purple-700 uppercase tracking-widest">NG Plating Analysis</h3></div>
@@ -530,7 +522,6 @@
                             )}
                         </div>
                     )}
-
                     <div className="mt-8 text-center"><div className="inline-flex items-center gap-3 px-8 py-3 bg-white/60 backdrop-blur-md rounded-full text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] border border-white shadow-sm italic"><Icon name="Zap" size={14} className="text-amber-500 animate-pulse" /> EN Plating Solero Division • GitHub Dashboard Final Update</div></div>
                 </div>
             );
